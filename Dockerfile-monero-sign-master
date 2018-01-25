@@ -1,0 +1,47 @@
+FROM ubuntu:16.04
+
+# install monero compilation dependencies
+RUN apt update && \
+	apt install -y wget curl unzip build-essential cmake pkg-config libssl-dev libboost-all-dev libzmq3-dev libunbound-dev libsodium-dev libminiupnpc-dev libunwind8-dev liblzma-dev libreadline6-dev libldns-dev libexpat1-dev libgtest-dev && \
+	curl -sL https://deb.nodesource.com/setup_8.x | bash - && \
+	apt install nodejs && \
+	cd /usr/src/gtest && \
+	cmake . && \
+	make && \
+	mv libg* /usr/lib/
+
+# compile monero wallet with shared lib
+RUN wget -P /tmp https://codeload.github.com/monero-project/monero/zip/master && \
+	cd /tmp && \
+	unzip master && \
+	mv monero-master /usr/local/monero && \
+	cd /usr/local/monero && \
+	cmake -D BUILD_SHARED_LIBS=ON . && \
+	make -j2 && \
+	make install && \
+	mv /usr/local/monero/src/wallet/libwallet.so /usr/lib
+
+# copy project files
+CMD mkdir /usr/local/lykke
+COPY core /usr/local/lykke/core
+COPY monero /usr/local/lykke/monero
+
+# install project dependencies, build & check c++ module
+RUN npm install -g node-gyp && \
+	cd /usr/local/lykke/monero/xmr && node-gyp rebuild && \
+	node index.js && \
+	cd /usr/local/lykke/core && npm install && \
+	cd /usr/local/lykke/monero/sign && npm install && \
+	cd /usr/local/lykke/monero/api && npm install
+
+# cleanup
+CMD rm -rf /tmp/* && apt clean
+
+# port 5000 is set in preferences
+EXPOSE 5000
+
+# start sign service
+WORKDIR /usr/local/lykke/monero/sign
+
+CMD ['node', 'index.js']
+

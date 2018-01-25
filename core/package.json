@@ -1,0 +1,41 @@
+{
+  "name": "lykke-blockchain-core",
+  "version": "0.0.1",
+  "description": "Lykke integration core package",
+  "main": "config.js",
+  "scripts": {
+    "test": "mocha tests.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/iartem/lykke-core.git"
+  },
+  "keywords": [
+    "lykke",
+    "blockchain"
+  ],
+  "author": "Artem Salpagarov",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/iartem/lykke-core/issues"
+  },
+  "homepage": "https://github.com/iartem/lykke-core#readme",
+  "dependencies": {
+    "koa": "^2.4.1",
+    "koa-body": "^2.5.0",
+    "koa-bouncer": "^6.0.4",
+    "koa-router": "^7.3.0",
+    "moment": "^2.20.1",
+    "mongodb": "^3.0.1",
+    "request": "^2.83.0",
+    "tape": "^4.8.0",
+    "winston": "^3.0.0-rc1"
+  },
+  "devDependencies": {
+    "mocha": "^4.1.0",
+    "nock": "^9.1.6",
+    "should": "^13.2.0",
+    "simple-mock": "^0.8.0",
+    "supertest": "^3.0.0"
+  }
+}

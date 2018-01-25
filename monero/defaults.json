@@ -1,0 +1,13 @@
+{
+	"chain": "monero",
+	"port": 3000,
+	"log": "debug",
+	"resources": {
+		"wallet": {
+			"host": "127.0.0.1",
+			"port": 18082
+		},
+		"storage": "/projects/ncorn/integration/monero-docker-testnet/wallets/",
+		"testWallet": "testwallet1"
+	}
+}

@@ -1,0 +1,5 @@
+{
+	"log": "debug",
+	"chain": "core",
+	"testnet": true
+}

@@ -1,0 +1,5 @@
+FROM iartem/monero-sign-master
+
+VOLUME /usr/local/lykke
+
+EXPOSE 5000

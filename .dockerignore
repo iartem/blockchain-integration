@@ -1,0 +1,4 @@
+core/node_modules
+monero/sign/node_modules
+monero/api/node_modules
+monero/xmr/build

@@ -1,0 +1,33 @@
+{
+  "name": "lykke.service.monero.xmr",
+  "version": "0.0.1",
+  "description": "Monero wallet wrapped in Node.js native module",
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha tests.js",
+    "install": "node-gyp rebuild"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iartem/Lykke.Service.Monero.xmr.git"
+  },
+  "keywords": [
+    "monero",
+    "lykke",
+    "blockchain"
+  ],
+  "author": "Artem Salpagarov",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/iartem/Lykke.Service.Monero.xmr/issues"
+  },
+  "homepage": "https://github.com/iartem/Lykke.Service.Monero.xmr#readme",
+  "dependencies": {},
+  "devDependencies": {
+    "mocha": "^4.1.0",
+    "nock": "^9.1.6",
+    "should": "^13.2.0",
+    "simple-mock": "^0.8.0",
+    "supertest": "^3.0.0"
+  }
+}

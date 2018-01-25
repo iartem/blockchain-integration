@@ -1,0 +1,3 @@
+docker run -d -p 28081:28081 -P --name mt iartem/monero-testnet
+monero-wallet-cli --testnet --generate-new-wallet a --electrum-seed "dexterity moisture inmate luggage online broken shuffled taunts scuba macro pigment sake luggage peeled oxidant fowls hull huddle gables luxury toilet itself binocular costume dexterity" --restore-height 1 --restore-deterministic-wallet --password "" --mnemonic-language English --command "exit"
+monero-wallet-cli --testnet --generate-new-wallet b --electrum-seed "espionage tycoon unwind hope hazard alumni listen cafe fierce aided educated zapped hold jeans onion yahoo fleet runway northern dewdrop slug factual neon olympics neon" --restore-height 1 --restore-deterministic-wallet --password "" --mnemonic-language English --command "exit"

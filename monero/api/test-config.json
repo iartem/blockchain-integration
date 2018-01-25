@@ -1,0 +1,16 @@
+{
+	"version": "0.0.1",
+	"chain": "monero",
+	"serviceName": "MoneroApi",
+	"port": 3000,
+	"log": "debug",
+	"testnet": true,
+	"store": "redis://192.168.3.77:6379/3",
+	"node": "http://localhost:28081",
+	"assetId": "monero",
+	"assetName": "Monero",
+	"monero": {
+		"viewKey": "0b595f0d3619cf793e60bff1f357adc1ff4cdcce52ab0089817490c718aa2900",
+		"address": "9u9j6xG1GNu4ghrdUL35m5PQcJV69YF8731DSTDoh7pDgkBWz2LWNzncq7M5s1ARjPRhvGPX4dBUeC3xNj4wzfrjV6SY3e9"
+	}
+}
