@@ -1,7 +1,6 @@
-const redis = require('redis'),
-	{promisify} = require('util');
+const MongoClient = require('mongodb').MongoClient;
 
-class RedisStore {
+class MongoStore {
 	constructor(CFG, log) {
 		this.connected = false;
 		this.connectionErrors = 0;
@@ -14,101 +13,87 @@ class RedisStore {
 	}
 
 	close () {
-		return this.redis.quit();
+		return this.client ? this.client.close() : Promise.resolve();
 	}
 
 	reconnect () {
-		if (this.redis) {
+		if (this.client) {
 			this.close();
 		}
 
-		this.redis = redis.createClient({
-			url: this.CFG.store,
-			connect_timeout: 3000,
-			retry_strategy: (opts) => {
-				if (opts.error && opts.error.code === 'ECONNREFUSED') {
-					// End reconnecting on a specific error and flush all commands with
-					// a individual error
-					return new Error('The server refused the connection');
-				}
-				if (opts.total_retry_time > 1000 * 3 * 60) {
-					// End reconnecting after a specific timeout and flush all commands
-					// with a individual error
-					return new Error('Retry time exhausted');
-				}
-				if (opts.attempt > 3) {
-					// End reconnecting with built in error
-					return undefined;
-				}
-				// reconnect after
-				return Math.min(opts.attempt * 100, 3000);
-			}
-		});
-		this.get = promisify(this.redis.get).bind(this.redis);
-		this.set = promisify(this.redis.set).bind(this.redis);
-		this.del = promisify(this.redis.del).bind(this.redis);
-		this.exists = promisify(this.redis.exists).bind(this.redis);
-		this.setnx = promisify(this.redis.setnx).bind(this.redis);
-		this.getset = promisify(this.redis.getset).bind(this.redis);
-		this.zadd = promisify(this.redis.zadd).bind(this.redis);
-		this.zrem = promisify(this.redis.zrem).bind(this.redis);
-		this.zscore = promisify(this.redis.zscore).bind(this.redis);
-		this.zincrby = promisify(this.redis.zincrby).bind(this.redis);
-		this.zrange = promisify(this.redis.zrange).bind(this.redis);
-		this.zrangebyscore = promisify(this.redis.zrangebyscore).bind(this.redis);
-		this.zcount = promisify(this.redis.zcount).bind(this.redis);
-		this.hexists = promisify(this.redis.hexists).bind(this.redis);
-		this.hmset = promisify(this.redis.hmset).bind(this.redis);
-		this.hmget = promisify(this.redis.hmget).bind(this.redis);
-		this.hget = promisify(this.redis.hget).bind(this.redis);
-		this.hset = promisify(this.redis.hset).bind(this.redis);
-		this.hgetall = promisify(this.redis.hgetall).bind(this.redis);
-		
-		this.connectPromise = new Promise((resolve, reject) => {
-			this.redis.on('connect', () => {
+		this.log.info(`Connecting in store: ${this.CFG.store}`);
+		this.connectPromise = MongoClient.connect(this.CFG.store, {connectTimeoutMS: 3000, socketTimeoutMS: 3000})
+			.then(client => {
 				this.connected = true;
 				this.connectionErrors = 0;
 				this.connectPromise = null;
-				resolve(this);
-			});
-			this.redis.on('error', err => {
+
+				this.client = client;
+				this.db = client.db(this.CFG.store.split('/').pop());
+
+				this.Addresses = this.db.collection('addresses');
+				this.Transactions = this.db.collection('transactions');
+
+				return this;
+			}, err => {
 				if (!this.connected) {
 					this.connectionErrors++;
 				}
 				this.log.error(`Error in store: ${err.message || 'Unknown error'}`);
 
 				if (this.connectionErrors < 3) {
-					this.reconnect().then(resolve, reject);
+					return this.reconnect();
 				} else {
 					this.connected = false;
 					this.connectionErrors = 0;
 					this.connectPromise = null;
 					this.close();
-					reject(err);
 				}
 			});
-			if (this.redis.connected) {
-				this.connected = true;
-				this.connectionErrors = 0;
-				this.connectPromise = null;
-				resolve(this);
-			}
-		});
 
 		return this.connectPromise;
 	}
 
-	toObject(data) {
-		if (typeof data === 'object' && data.length) {
-			let obj = {};
-			data.forEach((v, i) => {
-				if (i % 2 === 0) {
-					obj[v] = data[i + 1];
-				}
-			});
-			return obj;
+	address (id) {
+		return this.Addresses.findById(id);
+	}
+
+	tx (id, data) {
+		if (data) {
+			return this.update(this.Transactions, id, data);
+		} else {
+			return this.findOne(this.Transactions, id);
 		}
 	}
+
+	txDelete (id) {
+		return this.Transactions.deleteOne({_id: id}).then(d => d.deletedCount);
+	}
+
+	op (opid, data) {
+		if (data) {
+			return this.update(this.Transactions, {op: opid}, data);
+		} else {
+			return this.findOne(this.Transactions, {op: opid});
+		}
+	}
+
+	findOne (collection, id) {
+		return collection.findOne(typeof id === 'object' ? id : {_id: id});
+	}
+
+	update (collection, id, data, upsert=true) {
+		if (typeof id !== 'object') {
+			data._id = data._id || id;
+		}
+		let update = Object.keys(data).filter(k => k[0] === '$').length ? data : {$set: data};
+		return collection.updateOne(typeof id === 'object' ? id : {_id: id}, update, {upsert: upsert}).then(d => d.upsertedCount || d.modifiedCount, this.log.warn.bind(this.log));
+	}
+
+	delete (collection, id) {
+		return collection.deleteOne({_id: id}).then(d => d.deletedCount);
+	}
+
 }
 
-module.exports = RedisStore;
+module.exports = MongoStore;

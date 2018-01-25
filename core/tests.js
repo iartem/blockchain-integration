@@ -158,13 +158,14 @@ describe('server', () => {
 					let key = 'test' + Date.now(),
 						value = Date.now() + 'some test string';
 					
-					let ok = await ctx.store.set(key, value);
-					ok = await ctx.store.get(key);
+					let ok = await ctx.store.tx(key, {a: value});
 
-					ctx.status = ok === value ? 200 : 400;
+					ok = await ctx.store.tx(key);
+
+					ctx.status = ok.a === value ? 200 : 400;
 					ctx.body = {ok: ctx.status === 200};
 
-					await ctx.store.del(key);
+					await ctx.store.txDelete(key);
 				}
 			},
 			DELETE: {

@@ -91,11 +91,14 @@ const index = (settings, routes) => {
 							trace: err.stack
 						};
 					} else if (err.name === 'XMRError') {
+						L.warning(`XMRError: ${err.message}`);
 						ctx.body = {
 							errorMessage: 'Monero error: ' + (err.message || 'Unknown error'),
 							trace: err.stack
 						};
 					} else {
+						L.error(`Server error: ${err.message}, stack: ${JSON.stringify(err.stack)}`);
+						ctx.status = 500;
 						ctx.body = {
 							errorMessage: 'Server Error: ' + (err.message || JSON.stringify(err)),
 							trace: err.stack
