@@ -2,8 +2,6 @@
 #include "boost/none_t.hpp"
 #include "string_coding.h"
 
-std::ofstream logstream("xmr.log");
-#define EOL "\r\n"
 
 namespace tools {
 
@@ -26,6 +24,10 @@ namespace tools {
 
 	Persistent<Function> XMR::constructor;
 
+	/**
+	 * Class wich transforms data from v8 to monero and back. 
+	 * Also contains some retrying logic 
+	 */
 	XMR::XMR(bool testnet, std::string daemon, bool ssl) {
 		this->wallet = new tools::XMRWallet(testnet);
 		this->daemon = daemon;
@@ -115,6 +117,10 @@ namespace tools {
 		args.GetReturnValue().Set(ret);
 	}
 
+	/**
+	 * Create integrated address: 
+	 * @param args [description]
+	 */
 	void XMR::createIntegratedAddress(const FunctionCallbackInfo<Value>& args) {
 		Isolate* isolate = args.GetIsolate();
 		XMR* xmr = ObjectWrap::Unwrap<XMR>(args.Holder());
@@ -353,24 +359,29 @@ namespace tools {
 		std::string data;
 		std::string error = xmr->wallet->createUnsignedTransaction(data, tx, optimized);
 
-		if (optimized && isError(error)) {
-			ret->Set(String::NewFromUtf8(isolate, "optimizedError"), String::NewFromUtf8(isolate, error.c_str()));
-			error = xmr->wallet->createUnsignedTransaction(data, tx, false);
+		if (isError(error)) {
+			ret->Set(String::NewFromUtf8(isolate, "error"), String::NewFromUtf8(isolate, error.c_str()));
+			// if (optimized) {
+			// 	error = xmr->wallet->createUnsignedTransaction(data, tx, false);
+
+			// }
+		} else {
+			ret->Set(String::NewFromUtf8(isolate, "unsigned"), String::NewFromUtf8(isolate, data.c_str()));
 		}
 
-		if (isError(error)) {
-			std::string outputs;
- 			std::string secondError = xmr->wallet->exportOutputs(outputs);
- 			if (isError(secondError)) {
- 				error = std::string("Double error: ") + error + ", " + secondError;
-				ret->Set(String::NewFromUtf8(isolate, "error"), String::NewFromUtf8(isolate, error.c_str()));
- 			} else {
-				ret->Set(String::NewFromUtf8(isolate, "error"), String::NewFromUtf8(isolate, error.c_str()));
-				ret->Set(String::NewFromUtf8(isolate, "outputs"), String::NewFromUtf8(isolate, encodeBase64(outputs).c_str()));
- 			}
-		} else {
-			ret->Set(String::NewFromUtf8(isolate, "unsigned"), String::NewFromUtf8(isolate, encodeBase64(data).c_str()));
-		}
+		// if (isError(error)) {
+		// 	std::string outputs;
+ 	// 		std::string secondError = xmr->wallet->exportOutputs(outputs);
+ 	// 		if (isError(secondError)) {
+ 	// 			error = std::string("Double error: ") + error + ", " + secondError;
+		// 		ret->Set(String::NewFromUtf8(isolate, "error"), String::NewFromUtf8(isolate, error.c_str()));
+ 	// 		} else {
+		// 		ret->Set(String::NewFromUtf8(isolate, "error"), String::NewFromUtf8(isolate, error.c_str()));
+		// 		ret->Set(String::NewFromUtf8(isolate, "outputs"), String::NewFromUtf8(isolate, outputs.c_str()));
+ 	// 		}
+		// } else {
+		// 	ret->Set(String::NewFromUtf8(isolate, "unsigned"), String::NewFromUtf8(isolate, data.c_str()));
+		// }
 
 		args.GetReturnValue().Set(ret);
 	}
@@ -388,7 +399,6 @@ namespace tools {
 	
 		std::string error;
 		std::string data(*v8::String::Utf8Value(args[0]->ToString()));
-		data = decodeBase64(data);
 
 		int typ = xmr->wallet->dataType(data);
 		if (typ <= 0) {
@@ -399,7 +409,7 @@ namespace tools {
 			if (isError(error)) {
 				ret->Set(String::NewFromUtf8(isolate, "error"), String::NewFromUtf8(isolate, error.c_str()));
 			} else {
-				ret->Set(String::NewFromUtf8(isolate, "signed"), String::NewFromUtf8(isolate, encodeBase64(data).c_str()));
+				ret->Set(String::NewFromUtf8(isolate, "signed"), String::NewFromUtf8(isolate, data.c_str()));
 			}
 		} else if (typ == XMR_DATA_OUTPUTS) {
 			error = xmr->wallet->importOutputs(data);
@@ -410,8 +420,7 @@ namespace tools {
 				if (isError(error)) {
 					ret->Set(String::NewFromUtf8(isolate, "error"), String::NewFromUtf8(isolate, error.c_str()));
 				} else {
-					// TODO: return key images anyway, even if exportKeyImages fails
-					ret->Set(String::NewFromUtf8(isolate, "keyImages"), String::NewFromUtf8(isolate, encodeBase64(data).c_str()));
+					ret->Set(String::NewFromUtf8(isolate, "keyImages"), String::NewFromUtf8(isolate, data.c_str()));
 				}
 			}
 		} else {
@@ -435,7 +444,6 @@ namespace tools {
 	
 		std::string error;
 		std::string data(*v8::String::Utf8Value(args[0]->ToString()));
-		data = decodeBase64(data);
 
 		int typ = xmr->wallet->dataType(data);
 		if (typ <= 0) {
@@ -447,12 +455,14 @@ namespace tools {
 			if (isError(error)) {
 				ret->Set(String::NewFromUtf8(isolate, "error"), String::NewFromUtf8(isolate, error.c_str()));
 				
-				std::string secondError = xmr->wallet->exportOutputs(data);
-				if (isError(secondError)) {
-					error = "Double error: " + error + ", " + secondError;
-					ret->Set(String::NewFromUtf8(isolate, "error"), String::NewFromUtf8(isolate, error.c_str()));
-				} else {
-					ret->Set(String::NewFromUtf8(isolate, "outputs"), String::NewFromUtf8(isolate, encodeBase64(data).c_str()));
+				if (error != "No connection to daemon" && error != "Daemon is busy") {
+					std::string secondError = xmr->wallet->exportOutputs(data);
+					if (isError(secondError)) {
+						error = "Double error: " + error + ", " + secondError;
+						ret->Set(String::NewFromUtf8(isolate, "error"), String::NewFromUtf8(isolate, error.c_str()));
+					} else {
+						ret->Set(String::NewFromUtf8(isolate, "outputs"), String::NewFromUtf8(isolate, data.c_str()));
+					}
 				}
 			} else {
 				ret->Set(String::NewFromUtf8(isolate, "info"), txInfoToObj(isolate, info));

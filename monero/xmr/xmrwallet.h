@@ -1,9 +1,15 @@
 #pragma once
 
 #include "wallet/wallet2.h"
+#include <boost/iostreams/filter/gzip.hpp>
+#include <boost/iostreams/filtering_stream.hpp>
+#include <boost/iostreams/copy.hpp>
 #include <boost/serialization/map.hpp>
 #include <boost/serialization/list.hpp>
 #include <boost/serialization/vector.hpp>
+#include <boost/archive/binary_oarchive.hpp>
+#include <boost/archive/binary_iarchive.hpp>
+#include "string_coding.h"
 
 struct XMRKeys {
 	std::string spend;
@@ -44,6 +50,7 @@ struct XMRTxInfo {
 	std::vector<XMRDest> destinations;
 };
 
+#define XMR_PREFIX 						"XMR"
 #define XMR_DATA_TX_UNSIGNED 			1
 #define XMR_DATA_TX_UNSIGNED_OPTIMIZED 	2
 #define XMR_DATA_TX_SIGNED 				3
@@ -76,6 +83,15 @@ namespace tools {
 		END_SERIALIZE()
 	};
 
+	struct xmr_kis {
+		std::vector<size_t> idxs;
+		std::vector<crypto::key_image> key_images;
+
+		BEGIN_SERIALIZE_OBJECT()
+		FIELD(idxs)
+		FIELD(key_images)
+		END_SERIALIZE()
+	};
 
 	class XMRWallet : public wallet2 {
 		public:
@@ -108,7 +124,7 @@ namespace tools {
 			bool stopAutoRefresh();
 			void wallet_idle_thread();
 
-			int dataType(std::string &data);
+			uint32_t dataType(std::string &data);
 			std::string exportOutputs(std::string &outputs);
 			std::string importOutputs(std::string &data);
 			std::string exportKeyImages(std::string &images);
@@ -125,6 +141,90 @@ namespace tools {
 			// bool sign_tx(unsigned_tx_set &exported_txs, const std::string &signed_filename, std::vector<wallet2::pending_tx> &txs, bool export_raw);
 
 	};
+
+	template <typename T> inline std::string saveGZBase64String(uint32_t type, const T & o) {
+		// std::stringstream compressed;
+		// std::ostringstream origin;
+
+		// boost::iostreams::filtering_streambuf<boost::iostreams::input> out;
+		// out.push(boost::iostreams::gzip_compressor(boost::iostreams::gzip_params(boost::iostreams::gzip::best_compression)));
+		// out.push(origin);
+
+		// boost::archive::portable_binary_oarchive oa(origin);
+		// oa << o;
+
+		// boost::iostreams::copy(out, compressed);
+		// return std::to_string(type) + epee::string_encoding::base64_encode(origin.str());
+		
+		std::stringstream data;
+		data << type;
+		boost::archive::portable_binary_oarchive arch(data);
+		arch << o;
+
+		std::stringstream compressed;
+		boost::iostreams::filtering_streambuf<boost::iostreams::input> out;
+		out.push(boost::iostreams::gzip_compressor(boost::iostreams::gzip_params(boost::iostreams::gzip::best_compression)));
+		out.push(data);
+		boost::iostreams::copy(out, compressed);
+
+		return epee::string_encoding::base64_encode(compressed.str());
+		// return std::to_string(type) + "|" + epee::string_encoding::base64_encode(data.str());
+	}
+
+	template <typename T> inline void loadGZBase64String(uint32_t &type, T & o, const std::string& s) {
+		// size_t pos = s.find("|");
+		// type = std::stoi(s.substr(0, pos));
+		std::string data = epee::string_encoding::base64_decode(s);
+
+		std::stringstream compressed(data);
+		std::stringstream decompressed;
+
+		boost::iostreams::filtering_streambuf<boost::iostreams::input> out;
+		out.push(boost::iostreams::gzip_decompressor());
+		out.push(compressed);
+		boost::iostreams::copy(out, decompressed);
+
+		decompressed >> type;
+		boost::archive::portable_binary_iarchive ar(decompressed);
+		ar >> o;
+
+		// type = std::stoi(s.substr(0, 1));
+		// std::string data = s.substr(1);
+
+		// std::istringstream compressed(epee::string_encoding::base64_decode(data));
+		// std::istringstream decompressed;
+
+		// boost::iostreams::filtering_streambuf<boost::iostreams::input> in;
+		// in.push(boost::iostreams::zlib_decompressor());
+		// in.push(compressed);
+		// boost::iostreams::copy(in, decompressed);
+
+		// boost::archive::portable_binary_iarchive ia(decompressed);
+		// ia >> o;
+
+		// return decompressed;
+
+
+		// iss >> type;
+		// bio::filtering_stream<bio::input> f;
+		// // f.push(bio::gzip_decompressor());
+		// f.push(iss);
+		// bar::binary_iarchive ia(f);
+		// ia >> o;
+	}
+
+	inline void loadGZBase64StringType(uint32_t &type, const std::string& s) {
+		std::string data = epee::string_encoding::base64_decode(s);
+		std::stringstream compressed(data);
+		std::stringstream decompressed;
+
+		boost::iostreams::filtering_streambuf<boost::iostreams::input> out;
+		out.push(boost::iostreams::gzip_decompressor());
+		out.push(compressed);
+		boost::iostreams::copy(out, decompressed);
+
+		decompressed >> type;
+	}
 }
 
 namespace boost
@@ -151,12 +251,12 @@ namespace boost
 
 
     template <class Archive>
-    inline typename std::enable_if<!Archive::is_loading::value, void>::type initialize_xmr_from_view(Archive &a, tools::xmr_from_spend &x, const boost::serialization::version_type ver)
+    inline typename std::enable_if<!Archive::is_loading::value, void>::type initialize_xmr_from_spend(Archive &a, tools::xmr_from_spend &x, const boost::serialization::version_type ver)
     {
     }
 
     template <class Archive>
-    inline typename std::enable_if<Archive::is_loading::value, void>::type initialize_xmr_from_view(Archive &a, tools::xmr_from_spend &x, const boost::serialization::version_type ver)
+    inline typename std::enable_if<Archive::is_loading::value, void>::type initialize_xmr_from_spend(Archive &a, tools::xmr_from_spend &x, const boost::serialization::version_type ver)
     {
     }
 
@@ -164,6 +264,23 @@ namespace boost
     inline void serialize(Archive &a, tools::xmr_from_spend &x, const boost::serialization::version_type ver)
     {
       a & x.txs;
+      a & x.idxs;
+      a & x.key_images;
+    }
+
+    template <class Archive>
+    inline typename std::enable_if<!Archive::is_loading::value, void>::type initialize_xmr_kis(Archive &a, tools::xmr_kis &x, const boost::serialization::version_type ver)
+    {
+    }
+
+    template <class Archive>
+    inline typename std::enable_if<Archive::is_loading::value, void>::type initialize_xmr_kis(Archive &a, tools::xmr_kis &x, const boost::serialization::version_type ver)
+    {
+    }
+
+    template <class Archive>
+    inline void serialize(Archive &a, tools::xmr_kis &x, const boost::serialization::version_type ver)
+    {
       a & x.idxs;
       a & x.key_images;
     }

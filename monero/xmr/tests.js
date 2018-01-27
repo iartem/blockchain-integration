@@ -7,58 +7,37 @@ const should = require('should'),
 	fs = require('fs');
 
 const DATA = {
-	spend: 'c5214de039ac7183872aebebac55df168d53a2fce579efffb3fb6159dc3c4a0e',
-	
-	big: {
-		spend: '462f85289b275a6a58af932fcec11660844a0b7485df27b9c095fa2c67ad020f',
-		view: 'a66e4a83860b7589c12116ba95faedab187c7a69176fbbc0f5284141c64b3904',
-		address: 'A1fCKqMJqD6RMP8TaKehoWWmbSa9hDMQviEh2hHQu9w6UTRvvUPL9CGhuNWiB3dG8618Z1cvLrNDgcaVjLibpBxNRA7Q67f'
+	seed: 'c5214de039ac7183872aebebac55df168d53a2fce579efffb3fb6159dc3c4a0e',
+
+	lykke: {
+		"spend": "ff06df41b78c0df5b8e105b3a34b6c16906fe9feebf9c8ecb858a9d6143ccd0b",
+		"view": "4e707e889dbe45923702c13933e363749d23c3e7d98af497d287da010e538e0a",
+		"address":"9tJb4tPdUomeJHfvjBjyr556q4VHQmkBYhx6rTc7aAQd4ZC4uXq7TQZU1cDCj8wrCoNDEDsjvRpLxgRyesb2xPSnHESDN8J"
 	},
 
 	bob: {
-		spend: '9a42994747657aa2165e961e204eaa4efbbc4ed175eb0a5e88780b7574cfc005',
-		view: '44bd0704d90b726aecbb535db29f891ed1e4189d41d40ff53a4140f876630204',
-		address: '9wd2GoKLwnFE19ZSoHhASQBy8UAhsZ3JVD6w4sYV7tGTNr3G4gYxxKfHFQr9pH7gih9SFufiBe4v7XpVw5hBy4MWBkPKm75'
+		spend: '1d31892fc26b183bbb548dda11ab0629e56788beeef9964129879a3b04c3750f',
+		view: '057d3c8ffed778d6af3d67423b66579d50b225301b92bdbd16e876045feb0c08',
+		address: '9zsVSGGbMWM1HL6gxrcQ8oQZd3XH4XpfPYshLZU8qhDmZaGEYaR8BegCSTa1PEqDK8YU8DY1jg7xzEj8hyXnzrmGKwuPLoy'
 	},
 
 	alice: {
-		spend: '7ccd8e28b6fa7003b4e141606f18e3cdba4a22beab48f2e7a56ada32bae5cd08',
-		view: '0f61a355ed98841413b95e87d11c8de8a2ae64b0f4524d0ce171c7c1afa45c0f',
-		address: '9wYLTsMktzyTmtPNjWsMECfCCQ7ZtQLuTEMChN4G7rsnfo9Rgw7QuSvJCTuqA2gyUKbpgkS1eH25QgFdWMErYj1yMunJ7ey'
+		spend: '1ffc2564cb754dc6e8f8937ae54f7d1b83f1e1dec2982dcecfdd0efe5252ca0d',
+		view: 'b116daa05f7b95d9ea3d390f0ab1fb1e7abfbee84c9a3a85931d5735d3ba470c',
+		address: '9xLsP9dotYANKRfknUiBar6hBDHwiPWRTZSV1NHMTUh6Gu4rHTLgkbBVC7QRpH6MotLt9YcnyHpANWhZoGWJnSMU6NT2Jwt'
 	}
 };
 
-var logger;
+var logger, CFG, 
+	// wallet with some coins to start
+	seedView, seedSpend,
 
-function retriableTransaction (tx, view, spend) {
-	function attempt(outputs) {
-		var result;
-		if (outputs) {
-			// result = view.exportOutputs();
-			result = view.createUnsignedTransaction(tx);
-			console.log('+++++ exportOutputs instead of createUnsignedTransaction: %j, error %s', Object.keys(result), result.error);
-		} else {
-			result = view.createUnsignedTransaction(tx);
-			console.log('+++++ createUnsignedTransaction: %j, error %s', Object.keys(result), result.error);
-		}
-		result = spend.signTransaction(result.unsigned || result.outputs);
-		console.log('+++++ signTransaction: %j, error %s', Object.keys(result), result.error);
-		result = view.submitSignedTransaction(result.signed || result.keyImages);
-		console.log('+++++ submitSignedTransaction: %j, tx %s, error %s', Object.keys(result), result.info ? result.info.id : 'nope',result.error);
-		return result;
-	}
+	// lykke wallet - view & spend parts
+	view, spend, 
 
-	let arg;
-	for (var i = 0; i < 3; i++) {
-		console.log('================== attempt ' + i + ' =====================');
-		let result = attempt(arg);
-		if (result.info) {
-			break;
-		} else {
-			arg = !!result.outputs;
-		}
-	}
-}
+	// some users
+	bob, alice;
+
 
 describe('XMR', () => {
 	before('should remove wallet files', () => {
@@ -66,7 +45,6 @@ describe('XMR', () => {
 		names.filter(n => n.length > 50).forEach(n => fs.unlinkSync(__dirname + '/' + n));
 	});
 
-	var CFG, viewWallet, spendWallet, bob, alice;
 	it('should load config', () => {
 		return config.load(__dirname + '/test-config.json').then(cfg => {
 			logger = require('../../core/log.js')('xmr');
@@ -75,48 +53,64 @@ describe('XMR', () => {
 	});
 
 	describe('preparation', () => {
-		it('should load test-config.jsob viewWallet and start monitoring it', () => {
-			viewWallet = new xmr.XMR(CFG, logger);
-			return viewWallet.initFromViewKey();
-		}).timeout(100000000); // for big blockchains rescan can take a while
+		it('should load seed wallet', () => {
+			seedView = new xmr.XMR(CFG, logger);
+			return seedView.initFromViewKey(DATA.seed);
+		}).timeout(10 * 60000);
 
-		it('should create bob & alice', () => {
-			let bob = viewWallet.createPaperWallet(),
-				alice = viewWallet.createPaperWallet();
+		// it('should create wallets', () => {
+		// 	let lykke = seedView.createPaperWallet(),
+		// 		bob = seedView.createPaperWallet(),
+		// 		alice = seedView.createPaperWallet();
 
-			should.exist(bob);
-			should.exist(alice);
+		// 	should.exist(lykke);
+		// 	should.exist(bob);
+		// 	should.exist(alice);
 
-			should.exist(bob.spend);
-			should.exist(alice.spend);
+		// 	should.exist(lykke.spend);
+		// 	should.exist(bob.spend);
+		// 	should.exist(alice.spend);
 
-			should.exist(bob.view);
-			should.exist(alice.view);
+		// 	should.exist(lykke.view);
+		// 	should.exist(bob.view);
+		// 	should.exist(alice.view);
 
-			should.exist(bob.address);
-			should.exist(alice.address);
+		// 	should.exist(lykke.address);
+		// 	should.exist(bob.address);
+		// 	should.exist(alice.address);
 
-			should.exist(bob.mnemonics);
-			should.exist(alice.mnemonics);
+		// 	should.exist(lykke.mnemonics);
+		// 	should.exist(bob.mnemonics);
+		// 	should.exist(alice.mnemonics);
 
-			DATA.bob.spend = bob.spend;
-			DATA.bob.view = bob.view;
-			DATA.bob.address = bob.address;
+		// 	DATA.lykke = lykke;
+		// 	DATA.bob = bob;
+		// 	DATA.alice = alice;
 
-			DATA.alice.spend = alice.spend;
-			DATA.alice.view = alice.view;
-			DATA.alice.address = alice.address;
+		// 	console.log('lykke: %j', lykke);
+		// 	console.log('bob: %j', bob);
+		// 	console.log('alice: %j', alice);
+		// });
 
-			console.log('bob: %j', bob);
-			console.log('alice: %j', alice);
+		it('should create view & spend wallets', () => {
+			CFG.monero.address = DATA.lykke.address;
+			CFG.monero.viewKey = DATA.lykke.view;
+
+			view = new xmr.XMR(CFG, logger);
+			spend = new xmr.XMR(CFG, logger);
+			seedSpend = new xmr.XMR(CFG, logger);
+
+			return Promise.all([
+				view.initFromViewKey(),
+				spend.initFromSpendKey(DATA.lykke.spend),
+				seedSpend.initFromSpendKey(DATA.seed)
+			]);
 		});
 
-		it('should load spend wallets', () => {
-			spendWallet = new xmr.XMR(CFG, logger);
+		it('should load user wallets', () => {
 			bob = new xmr.XMR(CFG, logger);
 			alice = new xmr.XMR(CFG, logger);
 			return Promise.all([
-				spendWallet.initFromSpendKey(DATA.spend),
 				bob.initFromSpendKey(DATA.bob.spend),
 				alice.initFromSpendKey(DATA.alice.spend)
 			]);
@@ -125,105 +119,159 @@ describe('XMR', () => {
 
 	describe('checks', () => {
 		it('should validate addresses successfully', () => {
-			viewWallet.address().should.equal(CFG.monero.address);
-			spendWallet.address().should.equal(CFG.monero.address);
+			view.address().should.equal(CFG.monero.address);
+			spend.address().should.equal(CFG.monero.address);
 			bob.address().should.equal(DATA.bob.address);
 			alice.address().should.equal(DATA.alice.address);
 		});
 
-		it('should connect bob & alice & return 0 balance for them', () => {
+		it('should connect view, bob & alice & return 0 balance for them', () => {
+			view.connect().should.be.true();
 			bob.connect().should.be.true();
 			alice.connect().should.be.true();
+			view.balances().balance.should.equal('0');
 			bob.balances().balance.should.equal('0');
 			alice.balances().balance.should.equal('0');
 		});
 
-		it('should get incoming transactions successfully (more than 10 tx for viewWallet, 0 for bob & alice)', () => {
-			viewWallet.transactions('', true, false).length.should.be.above(10);
+		it('should return balance of above 31 for seed wallet', () => {
+			parseInt(seedView.balances().unlocked).should.be.above(31e12);
+		});
+
+		it('should get incoming transactions successfully (more than 10 tx for seed, 0 for bob & alice)', () => {
+			seedView.transactions('', true, false).length.should.be.above(10);
+			view.transactions('', true, false).length.should.equal(0);
 			bob.transactions('', true, false).length.should.equal(0);
 			alice.transactions('', true, false).length.should.equal(0);
 		});
 
 		it('should get outgoing transactions successfully (0 transactions so far for everyone)', () => {
-			viewWallet.transactions('', false, true).length.should.equal(0);
+			seedView.transactions('', true, false).length.should.be.above(10);
+			view.transactions('', false, true).length.should.equal(0);
 			bob.transactions('', false, true).length.should.equal(0);
 			alice.transactions('', false, true).length.should.equal(0);
 		});
 	});
 
-	// describe('building transaction invalid data', () => {
-	// 	it('should return error when amount is too big', () => {
-	// 		let unlocked = parseInt(viewWallet.balances().unlocked);
-	// 		(() => {
-	// 			let tx = new xmr.Tx(viewWallet.address(), 1, 1).addDestination(unlocked + 10, bob.address());
-	// 			viewWallet.createUnsignedTransaction(tx);
-	// 		}).should.throw(new xmr.XMRError('Not enough money'));
-	// 	}).timeout(5000);
-	// 	it('should return error when amount is almost too big', () => {
-	// 		(() => {
-	// 			let unlocked = parseInt(viewWallet.balances().unlocked);
-	// 			let tx = new xmr.Tx(viewWallet.address(), 1, 1).addDestination(unlocked - 1e5, bob.address());
-	// 			viewWallet.createUnsignedTransaction(tx);
-	// 		}).should.throw(new xmr.XMRError('Not enough outputs to use'));
-	// 	}).timeout(5000);
-	// 	it('should return error when fee would be too much', () => {
-	// 		(() => {
-	// 			let tx = new xmr.Tx(viewWallet.address(), 1, 1000).addDestination(10, bob.address());
-	// 			viewWallet.createUnsignedTransaction(tx);
-	// 		}).should.throw(new xmr.XMRError('Amount zero would reach destination'));
-	// 	}).timeout(5000);
-	// 	it('should return error when priority is invalid', () => {
-	// 		(() => {
-	// 			let tx = new xmr.Tx(viewWallet.address(), 100000, 1).addDestination(10, bob.address());
-	// 			viewWallet.createUnsignedTransaction(tx);
-	// 		}).should.throw(new xmr.XMRError('Invalid priority'));
-	// 	}).timeout(5000);
-	// 	it('should return error when amount is zero', () => {
-	// 		(() => {
-	// 			let tx = new xmr.Tx(viewWallet.address(), 1, 1).addDestination(0, bob.address());
-	// 			viewWallet.createUnsignedTransaction(tx);
-	// 		}).should.throw(new xmr.XMRError('Amount zero would reach destination'));
-	// 	}).timeout(5000);
-	// 	it('should not return error when everything is ok', () => {
-	// 		(() => {
-	// 			let tx = new xmr.Tx(viewWallet.address(), 1, 1).addDestination(10, bob.address());
-	// 			viewWallet.createUnsignedTransaction(tx);
-	// 		}).should.not.throw();
-	// 	}).timeout(5000);
+	// describe('setting initial balances', () => {
+	// 	var bobby, alli;
+
+	// 	it('should send 1 XMR seed => lykke, 10 XMR seed => bob, 20 XMR seed => alice', () => {
+	// 		retriableTransaction(new xmr.Tx(seedView.address(), 1, 0).addDestination(1e12, view.address()), seedView, seedSpend);
+	// 		retriableTransaction(new xmr.Tx(seedView.address(), 1, 0).addDestination(10e12, bob.address()), seedView, seedSpend);
+	// 		retriableTransaction(new xmr.Tx(seedView.address(), 1, 0).addDestination(20e12, alice.address()), seedView, seedSpend);
+	// 	}).timeout(30000);
+
+	// 	it('should arrive eventually to bob\'s & alice\'s wallets, waiting for 10 minutes', () => {
+	// 		return utils.waitToResolve(() => {
+	// 			seedView.refresh();
+				
+	// 			let txs = seedView.transactions('', false, true);
+	// 			console.log('Pending tx: %j', txs);
+
+	// 			bob.refresh();
+	// 			alice.refresh();
+
+	// 			if (bob.balances().balance === '0') {
+	// 				throw new Error('Bob still has balance 0');
+	// 			} else if (alice.balances().balance === '0') {
+	// 				throw new Error('Alice still has balance 0');
+	// 			}
+	// 		}, 10000, 60);
+
+	// 	}).timeout(60000 * 10);
+
+	// 	it('now waiting for another 30 minutes for balances to unlock', () => {
+	// 		return utils.waitToResolve(() => {
+	// 			bob.refresh();
+	// 			alice.refresh();
+	// 			view.refresh();
+
+	// 			console.log('Bob\'s balance: ', bob.balances());
+	// 			console.log('Alice\' balance: ', alice.balances());
+	// 			console.log('Lykke\'s balance', view.balances());
+				
+	// 			if (bob.balances().unlocked === '0') {
+	// 				throw new Error('Bob still has unlocked 0');
+	// 			} else if (alice.balances().unlocked === '0') {
+	// 				throw new Error('Alice still has unlocked 0');
+	// 			} else if (view.balances().unlocked === '0') {
+	// 				throw new Error('Lykke still has unlocked 0');
+	// 			}
+	// 		}, 10000, 60);
+
+	// 	}).timeout(60000 * 30);
 	// });
 
-	// describe('signing transaction invalid data', () => {
-	// 	var spend;
+	describe('building transaction with invalid data', () => {
+		it('should return error when amount is too big', () => {
+			let unlocked = parseInt(seedView.balances().unlocked);
+			(() => {
+				let tx = new xmr.Tx(seedView.address(), 1, 1).addDestination(unlocked + 10, bob.address());
+				seedView.createUnsignedTransaction(tx);
+			}).should.throw(new xmr.XMRError('Not enough money'));
+		}).timeout(5000);
+		it('should return error when amount is almost too big', () => {
+			(() => {
+				let unlocked = parseInt(seedView.balances().unlocked);
+				let tx = new xmr.Tx(seedView.address(), 1, 1).addDestination(unlocked - 1e5, bob.address());
+				seedView.createUnsignedTransaction(tx);
+			}).should.throw(new xmr.XMRError('Exception when creating transaction: not enough outputs to use'));
+		}).timeout(5000);
+		it('should return error when fee would be too much', () => {
+			(() => {
+				let tx = new xmr.Tx(seedView.address(), 1, 1000).addDestination(10, bob.address());
+				seedView.createUnsignedTransaction(tx);
+			}).should.throw(new xmr.XMRError('Amount zero would reach destination'));
+		}).timeout(5000);
+		it('should return error when priority is invalid', () => {
+			(() => {
+				let tx = new xmr.Tx(seedView.address(), 100000, 1).addDestination(10, bob.address());
+				seedView.createUnsignedTransaction(tx);
+			}).should.throw(new xmr.XMRError('Invalid priority'));
+		}).timeout(5000);
+		it('should return error when amount is zero', () => {
+			(() => {
+				let tx = new xmr.Tx(seedView.address(), 1, 1).addDestination(0, bob.address());
+				seedView.createUnsignedTransaction(tx);
+			}).should.throw(new xmr.XMRError('Amount zero would reach destination'));
+		}).timeout(5000);
+		it('should not return error when everything is ok', () => {
+			(() => {
+				let tx = new xmr.Tx(seedView.address(), 1, 1).addDestination(10, bob.address());
+				seedView.createUnsignedTransaction(tx);
+			}).should.not.throw();
+		}).timeout(5000);
+	});
 
-	// 	it('should return error when no data provided', () => {
-	// 		spend = new xmr.XMR(CFG);
-	// 		spend.initFromSpendKey(DATA.spend);
+	describe('signing transaction invalid data', () => {
 
-	// 		(() => {
-	// 			spend.signTransaction();
-	// 		}).should.throw(new xmr.XMRError('signTransaction argument must be a string'));
-	// 	});
-	// 	it('should return error when invalid data provided', () => {
-	// 		(() => {
-	// 			spend.signTransaction('asdasdasd');
-	// 		}).should.throw(new xmr.XMRError('Bad magic in unsigned tx data'));
-	// 	});
-	// });
+		it('should return error when no data provided', () => {
+			(() => {
+				seedView.signTransaction();
+			}).should.throw(new xmr.XMRError('signTransaction argument must be a string'));
+		});
 
-	// describe('submitting transaction invalid data', () => {
+		it('should return error when invalid data provided', () => {
+			(() => {
+				seedView.signTransaction('asdasdasd');
+			}).should.throw(new xmr.XMRError('Invalid data type -1'));
+		});
+	});
 
-	// 	it('should return error when no data provided', () => {
-	// 		(() => {
-	// 			viewWallet.submitSignedTransaction();
-	// 		}).should.throw(new xmr.XMRError('submitSignedTransaction argument must be a string'));
-	// 	});
-	// 	it('should return error when invalid data provided', () => {
-	// 		(() => {
-	// 			viewWallet.submitSignedTransaction('asdasdasd');
-	// 		}).should.throw(new xmr.XMRError('Bad magic in signed tx data'));
-	// 	});
-	// });
-	
+	describe('submitting transaction invalid data', () => {
+		it('should return error when no data provided', () => {
+			(() => {
+				seedView.submitSignedTransaction();
+			}).should.throw(new xmr.XMRError('submitSignedTransaction argument must be a string'));
+		});
+
+		it('should return error when invalid data provided', () => {
+			(() => {
+				seedView.submitSignedTransaction('asdasdasd');
+			}).should.throw(new xmr.XMRError('Invalid data type -1'));
+		});
+	});
 	
 	// describe('refresh test', () => {
 	// 	it('should only refresh once in a while', async () => {
@@ -240,14 +288,14 @@ describe('XMR', () => {
 	// 	}).timeout(5 * 60000 + 60000);
 	// });
 
-	describe('first transfer - checking all transactions', () => {
-		it('should retry', () => {
-			retriableTransaction(new xmr.Tx(viewWallet.address(), 1, 0).addDestination(100e12, bob.address()), viewWallet, spendWallet);
-			retriableTransaction(new xmr.Tx(viewWallet.address(), 1, 0).addDestination(200e12, alice.address()), viewWallet, spendWallet);
-			retriableTransaction(new xmr.Tx(viewWallet.address(), 1, 0).addDestination(100e12, bob.address()), viewWallet, spendWallet);
-			retriableTransaction(new xmr.Tx(viewWallet.address(), 1, 0).addDestination(200e12, alice.address()), viewWallet, spendWallet);
-		}).timeout(100000);
-	});
+	// describe('first transfer - checking all transactions', () => {
+	// 	it('should retry', () => {
+	// 		retriableTransaction(new xmr.Tx(viewWallet.address(), 1, 0).addDestination(100e12, bob.address()), viewWallet, spendWallet);
+	// 		retriableTransaction(new xmr.Tx(viewWallet.address(), 1, 0).addDestination(200e12, alice.address()), viewWallet, spendWallet);
+	// 		retriableTransaction(new xmr.Tx(viewWallet.address(), 1, 0).addDestination(100e12, bob.address()), viewWallet, spendWallet);
+	// 		retriableTransaction(new xmr.Tx(viewWallet.address(), 1, 0).addDestination(200e12, alice.address()), viewWallet, spendWallet);
+	// 	}).timeout(100000);
+	// });
 
 	// describe('first transfer - checking all transactions', () => {
 	// 	var hash;
@@ -415,4 +463,34 @@ describe('XMR', () => {
 	// 	hash.charAt(0).should.not.equal('-');
 	// });
 });
+
+function retriableTransaction (tx, view, spend) {
+	function attempt(outputs) {
+		var result;
+		if (outputs) {
+			// result = view.exportOutputs();
+			result = view.createUnsignedTransaction(tx);
+			console.log('+++++ exportOutputs instead of createUnsignedTransaction: %j, error %s', Object.keys(result), result.error);
+		} else {
+			result = view.createUnsignedTransaction(tx);
+			console.log('+++++ createUnsignedTransaction: %j, error %s', Object.keys(result), result.error);
+		}
+		result = spend.signTransaction(result.unsigned || result.outputs);
+		console.log('+++++ signTransaction: %j, error %s', Object.keys(result), result.error);
+		result = view.submitSignedTransaction(result.signed || result.keyImages);
+		console.log('+++++ submitSignedTransaction: %j, tx %s, error %s', Object.keys(result), result.info ? result.info.id : 'nope',result.error);
+		return result;
+	}
+
+	let arg;
+	for (var i = 0; i < 3; i++) {
+		console.log('================== attempt ' + i + ' =====================');
+		let result = attempt(arg);
+		if (result.info) {
+			break;
+		} else {
+			arg = !!result.outputs;
+		}
+	}
+}
 

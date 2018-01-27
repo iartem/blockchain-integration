@@ -8,14 +8,7 @@
 #include "cryptonote_core/cryptonote_tx_utils.h"
 #include "string_tools.h"
 #include "misc_log_ex.h"
-
-#define UNSIGNED_TX_PREFIX "Monero unsigned tx set\003"
-#define UNSIGNED_OPTIMIZED_TX_PREFIX "Monero optimized unsigned tx set\003"
-#define SIGNED_TX_PREFIX "Monero signed tx set\003"
-#define SIGNED_OPTIMIZED_TX_PREFIX "Monero optimized signed tx set\003"
-#define OUTPUT_EXPORT_FILE_MAGIC "Monero output export\003"
-#define KEY_IMAGE_EXPORT_FILE_MAGIC "Monero key image export\002"
-#define PENDING_TX "pending_tx"
+#include <boost/format.hpp>
 
 #define LOCK_IDLE_SCOPE() \
   bool auto_refresh_enabled = m_auto_refresh_enabled.load(std::memory_order_relaxed); \
@@ -57,30 +50,6 @@ namespace tools {
 		keys.view = epee::string_tools::pod_to_hex(acc->get_keys().m_view_secret_key);
 		keys.address = acc->get_public_address_str(testnet());
 		keys.mnemonics = electrum;
-
-		// clearStatus();
-		// m_recoveringFromSeed = false;
-
-		// // add logic to error out if new wallet requested but named wallet file exists
-		// if (keys_file_exists || wallet_file_exists) {
-		// m_errorString = "attempting to generate or restore wallet, but specified file(s) exist.  Exiting to not risk overwriting.";
-		// LOG_ERROR(m_errorString);
-		// m_status = Status_Critical;
-		// return false;
-		// }
-		// // TODO: validate language
-		// m_wallet->set_seed_language(language);
-		// crypto::secret_key recovery_val, secret_key;
-		// try {
-		// recovery_val = m_wallet->generate(path, password, secret_key, false, false);
-		// m_password = password;
-		// m_status = Status_Ok;
-		// } catch (const std::exception &e) {
-		// LOG_ERROR("Error creating wallet: " << e.what());
-		// m_status = Status_Critical;
-		// m_errorString = e.what();
-		// return false;
-		// }
 
 		return keys;
 	}
@@ -223,41 +192,31 @@ namespace tools {
 		unlocked = this->unlocked_balance();
 	}
 
-	int XMRWallet::dataType(std::string &data) {
+	uint32_t XMRWallet::dataType(std::string &data) {
 		if (data.size() < 100) {
 			return -1;
 		}
 
-		if (memcmp(data.data(), UNSIGNED_TX_PREFIX, strlen(UNSIGNED_TX_PREFIX)) == 0) {
-			return XMR_DATA_TX_UNSIGNED;
-		} else if (memcmp(data.data(), UNSIGNED_OPTIMIZED_TX_PREFIX, strlen(UNSIGNED_OPTIMIZED_TX_PREFIX)) == 0) {
-			return XMR_DATA_TX_UNSIGNED_OPTIMIZED;
-		} else if (memcmp(data.data(), SIGNED_TX_PREFIX, strlen(SIGNED_TX_PREFIX)) == 0) {
-			return XMR_DATA_TX_SIGNED;
-		} else if (memcmp(data.data(), SIGNED_OPTIMIZED_TX_PREFIX, strlen(SIGNED_OPTIMIZED_TX_PREFIX)) == 0) {
-			return XMR_DATA_TX_SIGNED_OPTIMIZED;
-		} else if (memcmp(data.data(), OUTPUT_EXPORT_FILE_MAGIC, strlen(OUTPUT_EXPORT_FILE_MAGIC)) == 0) {
-			return XMR_DATA_OUTPUTS;
-		} else if (memcmp(data.data(), KEY_IMAGE_EXPORT_FILE_MAGIC, strlen(KEY_IMAGE_EXPORT_FILE_MAGIC)) == 0) {
-			return XMR_DATA_KEY_IMAGES;
-		} else {
-			return 0;
+		try {
+			uint32_t type;
+			loadGZBase64StringType(type, data);
+			return type;
+		} catch (...) {
+			return -1;
 		}
 	}
 
 	std::string XMRWallet::createUnsignedTransaction(std::string &data, XMRTx& tx, bool optimized) {
 		try {
-			LOG_ERROR("===== rescanning spent");
+			LOG_PRINT_L1("===== rescanning spent");
 			rescan_spent();
-			LOG_ERROR("===== rescanning spent done");
+			LOG_PRINT_L1("===== rescanning spent done");
 		} catch (...) {
-			LOG_ERROR("===== rescanning spent ERROR");
+			LOG_PRINT_L1("===== rescanning spent ERROR");
 		}
 
-		boost::filesystem::remove(PENDING_TX);
-
 		std::vector<cryptonote::tx_destination_entry> dsts;
-        std::vector<uint8_t> extra;
+		std::vector<uint8_t> extra;
 
 		for (auto& dst: tx.destinations) {
 			
@@ -306,31 +265,34 @@ namespace tools {
 			return "Internal XMR error";
 		}
 
+		for (auto &tx: ptx) {
+			tx_construction_data construction_data = tx.construction_data;
+			// Short payment id is encrypted with tx_key. 
+			// Since sign_tx() generates new tx_keys and encrypts the payment id, we need to save the decrypted payment ID
+			// Get decrypted payment id from pending_tx
+			crypto::hash8 payment_id = get_short_payment_id(tx);
+			if (payment_id != null_hash8) {
+				// Remove encrypted
+				remove_field_from_tx_extra(construction_data.extra, typeid(cryptonote::tx_extra_nonce));
+				// Add decrypted
+				std::string extra_nonce;
+				set_encrypted_payment_id_to_tx_extra_nonce(extra_nonce, payment_id);
+				if (!add_extra_nonce_to_tx_extra(construction_data.extra, extra_nonce)) {
+					LOG_ERROR("Failed to add decrypted payment id to tx extra");
+					return false;
+				}
+				LOG_PRINT_L1("Decrypted payment ID: " << payment_id);       
+			}
+		}
+
 		if (optimized) {
 			tools::xmr_from_view arch;
 
 			std::set<size_t> indexes;
 
 			for (auto &tx: ptx) {
-				tx_construction_data construction_data = tx.construction_data;
-				// Short payment id is encrypted with tx_key. 
-				// Since sign_tx() generates new tx_keys and encrypts the payment id, we need to save the decrypted payment ID
-				// Get decrypted payment id from pending_tx
-				crypto::hash8 payment_id = get_short_payment_id(tx);
-				if (payment_id != null_hash8) {
-					// Remove encrypted
-					remove_field_from_tx_extra(construction_data.extra, typeid(cryptonote::tx_extra_nonce));
-					// Add decrypted
-					std::string extra_nonce;
-					set_encrypted_payment_id_to_tx_extra_nonce(extra_nonce, payment_id);
-					if (!add_extra_nonce_to_tx_extra(construction_data.extra, extra_nonce)) {
-						LOG_ERROR("Failed to add decrypted payment id to tx extra");
-						return false;
-					}
-					LOG_PRINT_L1("Decrypted payment ID: " << payment_id);       
-				}
 				// Save tx construction_data to unsigned_tx_set
-				arch.txs.push_back(construction_data);     
+				arch.txs.push_back(tx.construction_data);     
 				
 				// save all selected indexes
 				for (size_t idx : tx.selected_transfers) {
@@ -345,42 +307,31 @@ namespace tools {
 				if (!td.m_key_image_known) {
 					indexes.insert(i);
 				}
-	    	}
+			}
 
-	    	LOG_ERROR(std::string("=======>>>>>>> going to export ") + std::to_string(indexes.size()) + " outputs out ot " + std::to_string(m_transfers.size()));
+			LOG_ERROR(std::string("=======>>>>>>> going to export ") + std::to_string(indexes.size()) + " outputs out ot " + std::to_string(m_transfers.size()));
 
-	    	// collect transfers we need
+			// collect transfers we need
 			for (size_t idx : indexes) {
 				const transfer_details& td = m_transfers[idx];
 				arch.idxs.push_back(idx);
 				arch.transfers.push_back(td);
-	    	}
-
-	    	// serialize
-			std::ostringstream oss;
-			boost::archive::portable_binary_oarchive ar(oss);
-			try {
-				ar << arch;
-			} catch (...) {
-				return "Cannot serialize optimized archive";
 			}
 
-			data = std::string(UNSIGNED_OPTIMIZED_TX_PREFIX) + oss.str();
+			// serialize
+			try {
+				data = saveGZBase64String(XMR_DATA_TX_UNSIGNED_OPTIMIZED, arch);
+			} catch(...) {
+				return "Cannot serialize optimized unsigned tx";
+			}
 
 		} else {
-			save_tx(ptx, PENDING_TX);
+			unsigned_tx_set txs;
 
-			boost::system::error_code errcode;
-
-			if (!boost::filesystem::exists(PENDING_TX, errcode)) {
-				return "Cannot commit tx";
-			}
-			if (!epee::file_io_utils::load_file_to_string(PENDING_TX, data)) {
-				return "Cannot load tx";
-			}
-
-			if (!boost::filesystem::remove(PENDING_TX)) {
-				return "Cannot remove tx data";
+			try {
+				data = saveGZBase64String(XMR_DATA_TX_UNSIGNED, txs);
+			} catch(...) {
+				return "Cannot serialize unsigned tx";
 			}
 		}
 
@@ -388,23 +339,21 @@ namespace tools {
 	}
 	
 	std::string XMRWallet::signTransaction(std::string &data) {
-		boost::filesystem::remove(PENDING_TX);
-
 		unsigned_tx_set exported_txs;
 		std::vector<size_t> keyIdxs;
 		std::vector<crypto::key_image> keyImages;
 
+		uint32_t type = dataType(data);
+
 		// parsing
-		if (strncmp(data.c_str(), UNSIGNED_OPTIMIZED_TX_PREFIX, strlen(UNSIGNED_OPTIMIZED_TX_PREFIX)) == 0) {
-			data = data.substr(strlen(UNSIGNED_OPTIMIZED_TX_PREFIX));
+		if (type == XMR_DATA_TX_UNSIGNED_OPTIMIZED) {
 
 			xmr_from_view arch;
+
 			try {
-				std::istringstream iss(data);
-				boost::archive::portable_binary_iarchive ar(iss);
-				ar >> arch;
+				loadGZBase64String(type, arch, data);
 			} catch (...) {
-				return "Failed to parse unsigned tx data";
+				return "Failed to parse optimized unsigned tx data";
 			}
 
 			// import outputs
@@ -454,7 +403,7 @@ namespace tools {
 					}
 				}
 
-		    	LOG_ERROR(std::string("=======<<<<<<< going to import ") + std::to_string(arch.idxs.size()) + " outputs & export " + std::to_string(keyImages.size()) + " key images");
+				LOG_ERROR(std::string("=======<<<<<<< going to import ") + std::to_string(arch.idxs.size()) + " outputs & export " + std::to_string(keyImages.size()) + " key images");
 
 				keyIdxs = arch.idxs;
 			}
@@ -463,12 +412,10 @@ namespace tools {
 			exported_txs.txes = arch.txs;
 			exported_txs.transfers = m_transfers; 
 
-		} else if (strncmp(data.c_str(), UNSIGNED_TX_PREFIX, strlen(UNSIGNED_TX_PREFIX)) == 0) {
-			data = data.substr(strlen(UNSIGNED_TX_PREFIX));
+		} else if (type == XMR_DATA_TX_UNSIGNED) {
+
 			try {
-				std::istringstream iss(data);
-				boost::archive::portable_binary_iarchive ar(iss);
-				ar >> exported_txs;
+				loadGZBase64String(type, exported_txs, data);
 			} catch (...) {
 				return "Failed to parse unsigned tx data";
 			}
@@ -539,14 +486,11 @@ namespace tools {
 			arch.idxs = keyIdxs;
 			arch.key_images = keyImages;
 
-			std::ostringstream oss;
-			boost::archive::portable_binary_oarchive ar(oss);
 			try {
-				ar << arch;
-				data = std::string(SIGNED_OPTIMIZED_TX_PREFIX) + oss.str();
+				data = saveGZBase64String(XMR_DATA_TX_SIGNED_OPTIMIZED, arch);
 				return "";
 			} catch(...) {
-				return "Failed to serialize signed optimized archive";
+				return "Failed to serialize optimized signed tx";
 			}
 
 		} else {
@@ -561,14 +505,11 @@ namespace tools {
 				signed_txes.key_images[i] = m_transfers[i].m_key_image;
 			}
 
-			std::ostringstream oss;
-			boost::archive::portable_binary_oarchive ar(oss);
 			try {
-				ar << signed_txes;
-				data = std::string(SIGNED_TX_PREFIX) + oss.str();
+				data = saveGZBase64String(XMR_DATA_TX_SIGNED, signed_txes);
 				return "";
 			} catch(...) {
-				return "Failed to serialize signed archive";
+				return "Failed to serialize signed tx";
 			}
 		}
 	}
@@ -576,19 +517,17 @@ namespace tools {
 	std::string XMRWallet::submitSignedTransaction(std::string &data, XMRTxInfo &info) {
 		std::vector<tools::wallet2::pending_tx> ptx;
 
-		if (strncmp(data.c_str(), SIGNED_OPTIMIZED_TX_PREFIX, strlen(SIGNED_OPTIMIZED_TX_PREFIX)) == 0) {
-			data = data.substr(strlen(SIGNED_OPTIMIZED_TX_PREFIX));
+		uint32_t type = dataType(data);
+
+		if (type == XMR_DATA_TX_SIGNED_OPTIMIZED) {
 
 			xmr_from_spend arch;
+
 			try {
-				std::istringstream iss(data);
-				boost::archive::portable_binary_iarchive ar(iss);
-				ar >> arch;
+				loadGZBase64String(type, arch, data);
 			} catch (...) {
 				return "Failed to parse optimized signed tx data";
 			}
-
-	    	LOG_ERROR(std::string("=======<<<>>>> going to import ") + std::to_string(arch.idxs.size()) + " key images");
 			
 			for (size_t i = 0; i < arch.idxs.size(); ++i) {
 				size_t idx = arch.idxs[i];
@@ -606,16 +545,13 @@ namespace tools {
 
 			ptx = arch.txs;
 
-		} else if (strncmp(data.c_str(), SIGNED_TX_PREFIX, strlen(SIGNED_TX_PREFIX)) == 0) {
-			data = data.substr(strlen(SIGNED_TX_PREFIX));
+		} else if (type == XMR_DATA_TX_SIGNED) {
 
 			signed_tx_set signed_txs;
 			try {
-				std::istringstream iss(data);
-				boost::archive::portable_binary_iarchive ar(iss);
-				ar >> signed_txs;
+				loadGZBase64String(type, signed_txs, data);
 			} catch (...) {
-				return "Failed to parse signed tx data";
+				return "Failed to parse optimized signed tx data";
 			}
 
 			// import key images
@@ -681,66 +617,30 @@ namespace tools {
 	std::string XMRWallet::exportOutputs(std::string &outputs) {
 		try {
 			std::vector<tools::wallet2::transfer_details> outs = export_outputs();
-
-			std::stringstream oss;
-			boost::archive::portable_binary_oarchive ar(oss);
-			ar << outs;
-
-			std::string magic(OUTPUT_EXPORT_FILE_MAGIC, strlen(OUTPUT_EXPORT_FILE_MAGIC));
-			
-			const cryptonote::account_public_address &keys = get_account().get_keys().m_account_address;
-			std::string header;
-			header += std::string((const char *)&keys.m_spend_public_key, sizeof(crypto::public_key));
-			header += std::string((const char *)&keys.m_view_public_key, sizeof(crypto::public_key));
-			
-			outputs = magic + encrypt_with_view_secret_key(header + oss.str());
-			
+			outputs = saveGZBase64String(XMR_DATA_OUTPUTS, outs);
 			return "";
 		
 		} catch (const std::exception &e) {
 			return e.what();
+		} catch (...) {
+			return "Failed to export outputs";
 		}
 	}
 
 	std::string XMRWallet::importOutputs(std::string &data) {
-		const size_t magiclen = strlen(OUTPUT_EXPORT_FILE_MAGIC);
-		if (data.size() < magiclen || memcmp(data.data(), OUTPUT_EXPORT_FILE_MAGIC, magiclen)) {
-			return "Bad data";
-		}
-
 		try {
-			data = decrypt_with_view_secret_key(std::string(data, magiclen));
-		} catch (const std::exception &e) {
-			return "Failed to decrypt";
-		}
-
-		const size_t headerlen = 2 * sizeof(crypto::public_key);
-		if (data.size() < headerlen) {
-			return "Bad data size";
-		}
-
-		const crypto::public_key &public_spend_key = *(const crypto::public_key*)&data[0];
-		const crypto::public_key &public_view_key = *(const crypto::public_key*)&data[sizeof(crypto::public_key)];
-		const cryptonote::account_public_address &keys = get_account().get_keys().m_account_address;
-		
-		if (public_spend_key != keys.m_spend_public_key || public_view_key != keys.m_view_public_key) {
-			return "Outputs are from different account";
-		}
-
-		try {
-			std::string body(data, headerlen);
-			std::stringstream iss;
-			iss << body;
-			
+			uint32_t type;
 			std::vector<tools::wallet2::transfer_details> outputs;
 			try {
-				boost::archive::portable_binary_iarchive ar(iss);
-				ar >> outputs;
+				loadGZBase64String(type, outputs, data);
+
+				if (type != XMR_DATA_OUTPUTS) {
+					throw std::logic_error("Bad data type in importOutputs");
+				}
+			} catch (const std::exception &e) {
+				return e.what();
 			} catch (...) {
-				iss.str("");
-				iss << body;
-				boost::archive::binary_iarchive ar(iss);
-				ar >> outputs;
+				return "Failed to import outputs";
 			}
 			
 			import_outputs(outputs);
@@ -748,76 +648,53 @@ namespace tools {
 	
 		} catch (const std::exception &e) {
 			return std::string("Failed to import outputs: ") + e.what();
+		} catch (...) {
+			return "Failed to import outputs";
 		}
 	}
 
 	std::string XMRWallet::exportKeyImages(std::string &images) {
-		std::vector<std::pair<crypto::key_image, crypto::signature>> ski = export_key_images();
-		std::string magic(KEY_IMAGE_EXPORT_FILE_MAGIC, strlen(KEY_IMAGE_EXPORT_FILE_MAGIC));
-		const cryptonote::account_public_address &keys = get_account().get_keys().m_account_address;
 
-		std::string data;
-		data += std::string((const char *)&keys.m_spend_public_key, sizeof(crypto::public_key));
-		data += std::string((const char *)&keys.m_view_public_key, sizeof(crypto::public_key));
+		try {
+			std::vector<std::pair<crypto::key_image, crypto::signature>> ski = export_key_images();
+			images = saveGZBase64String(XMR_DATA_KEY_IMAGES, ski);
+			return "";
 		
-		for (const auto &i: ski) {
-			data += std::string((const char *)&i.first, sizeof(crypto::key_image));
-			data += std::string((const char *)&i.second, sizeof(crypto::signature));
+		} catch (const std::exception &e) {
+			return e.what();
+		} catch (...) {
+			return "Failed to export key images";
 		}
-
-		// encrypt data, keep magic plaintext
-		std::string ciphertext = encrypt_with_view_secret_key(data);
-		images = magic + ciphertext;
-
-		return "";
 	}
 
 	std::string XMRWallet::importKeyImages(std::string &data, uint64_t &spent, uint64_t &unspent) {
-		const size_t magiclen = strlen(KEY_IMAGE_EXPORT_FILE_MAGIC);
-		if (data.size() < magiclen || memcmp(data.data(), KEY_IMAGE_EXPORT_FILE_MAGIC, magiclen)) {
-			return "Bad data";
-		}
-
 		try {
-			data = decrypt_with_view_secret_key(std::string(data, magiclen));
+			uint32_t type;
+			std::vector<std::pair<crypto::key_image, crypto::signature>> ski;
+			try {
+				loadGZBase64String(type, ski, data);
+
+				if (type != XMR_DATA_KEY_IMAGES) {
+					throw std::logic_error("Bad data type in importOutputs");
+				}
+
+				if (import_key_images(ski, spent, unspent) == 0) {
+					return "Failed to import key images";
+				}
+
+				return "";
+
+			} catch (const std::exception &e) {
+				return e.what();
+			} catch (...) {
+				return "Failed to import key images";
+			}
+			
 		} catch (const std::exception &e) {
-			return "Failed to decrypt";
+			return std::string("Failed to import outputs: ") + e.what();
+		} catch (...) {
+			return "Failed to import outputs";
 		}
-
-		const size_t headerlen = 2 * sizeof(crypto::public_key);
-		if (data.size() < headerlen) {
-			return "Bad data size";
-		}
-
-		const crypto::public_key &public_spend_key = *(const crypto::public_key*)&data[0];
-		const crypto::public_key &public_view_key = *(const crypto::public_key*)&data[sizeof(crypto::public_key)];
-		const cryptonote::account_public_address &keys = get_account().get_keys().m_account_address;
-		
-		if (public_spend_key != keys.m_spend_public_key || public_view_key != keys.m_view_public_key) {
-			return "Images are from different account";
-		}
-
-		const size_t record_size = sizeof(crypto::key_image) + sizeof(crypto::signature);
-		if ((data.size() - headerlen) % record_size) {
-			return "Bad data size in records";
-		}
-
-		size_t nki = (data.size() - headerlen) / record_size;
-
-		std::vector<std::pair<crypto::key_image, crypto::signature>> ski;
-		ski.reserve(nki);
-		
-		for (size_t n = 0; n < nki; ++n) {
-			crypto::key_image key_image = *reinterpret_cast<const crypto::key_image*>(&data[headerlen + n * record_size]);
-			crypto::signature signature = *reinterpret_cast<const crypto::signature*>(&data[headerlen + n * record_size + sizeof(crypto::key_image)]);
-			ski.push_back(std::make_pair(key_image, signature));
-		}
-
-		if (import_key_images(ski, spent, unspent) == 0) {
-			return "Failed to import key images";
-		}
-
-		return "";
 	}
 
 	std::string XMRWallet::address() {
@@ -865,18 +742,18 @@ namespace tools {
 
 			if (error.empty()) {
 				if (daemon > current) {
-	       			LOG_ERROR("XMRWallet::refresh current " << current << " daemon " << daemon);
+					LOG_ERROR("XMRWallet::refresh current " << current << " daemon " << daemon);
 					uint64_t pulled = 0;
 					tools::wallet2::refresh(daemon, pulled);
 					rescan_spent();
 					refreshed = true;
 					return "";
 				} else {
-	       			LOG_ERROR("XMRWallet::refresh won't refresh");
+					LOG_ERROR("XMRWallet::refresh won't refresh");
 					return "";
 				}
 			} else {
-	       		LOG_ERROR("XMRWallet::refresh error: " << error);
+				LOG_ERROR("XMRWallet::refresh error: " << error);
 				return std::string("-") + error;
 			}
 		} catch (...) {

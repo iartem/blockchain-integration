@@ -171,12 +171,10 @@ class XMRWrapper extends xmr.XMR {
 			throw new XMRError('Invalid priority');
 		}
 
-		// throws if no connection
-		this.refresh();
-
 		log.debug(`Creating transaction ${JSON.stringify(tx)}`);
 
 		let result = super.createUnsignedTransaction(tx, true);
+		log.debug(`Creating transaction returned ${Object.keys(result)}`);
 		if (result.error) {
 			if (result.outputs) {
 				log.warn(`Silently ignoring ${result.error} and returning outputs in ${result.outputs.length}b instead`);
@@ -188,24 +186,6 @@ class XMRWrapper extends xmr.XMR {
 			log.info(`Created transaction in ${result.unsigned.length}b`);
 		}
 		return result;
-		// if (result.charAt(0) === '-') {
-		// 	result = result.substr(1);
-		// 	log.error(`Error when creating transaction: ${result}`);
-		// 	if (result === 'Exception when creating transaction: not enough outputs to use') {
-		// 		this.rescan();
-		// 		result = super.createUnsignedTransaction(tx);
-		// 		if (result.charAt(0) === '-') {
-		// 			result = result.substr(1);
-		// 			log.error(`Error 2 when creating transaction: ${result}`);
-		// 			result = result === 'Exception when creating transaction: not enough outputs to use' ?  'Not enough outputs to use' : result;
-		// 		} else {
-		// 			return result;
-		// 		}
-		// 	}
-		// 	throw new XMRError(result);
-		// } else {
-		// 	return result;
-		// }
 	}
 
 	signTransaction (data) {
@@ -214,6 +194,7 @@ class XMRWrapper extends xmr.XMR {
 		}
 
 		let result = super.signTransaction(data);
+		log.debug(`Sign transaction returned ${Object.keys(result)}`);
 		if (result.error) {
 			if (result.keyImages) {
 				log.warn(`Silently ignoring ${result.error} and returning key images in ${result.keyImages.length}b instead`);
@@ -232,10 +213,8 @@ class XMRWrapper extends xmr.XMR {
 			throw new XMRError('submitSignedTransaction argument must be a string');
 		}
 
-		// throws if no connection
-		// this.refresh();
-
 		let result = super.submitSignedTransaction(data);
+		log.debug(`Submit transaction returned ${Object.keys(result)}`);
 		if (result.error) {
 			if (result.outputs) {
 				log.warn(`Silently ignoring ${result.error} and returning outputs in ${result.outputs.length}b instead`);

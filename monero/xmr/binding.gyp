@@ -21,6 +21,7 @@
 				"/usr/lib/x86_64-linux-gnu/libboost_system.so.1.58.0",
 				"/usr/lib/x86_64-linux-gnu/libboost_thread.so.1.58.0",
 				"/usr/lib/x86_64-linux-gnu/libboost_regex.so.1.58.0",
+				"/usr/lib/x86_64-linux-gnu/libboost_iostreams.so.1.58.0",
 				"/usr/lib/x86_64-linux-gnu/libboost_program_options.so.1.58.0",
 				"/usr/lib/libwallet.so",
 				# "/usr/local/monero/src/cryptonote_core/libcryptonote_core.so",
