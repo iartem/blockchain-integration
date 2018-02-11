@@ -43,5 +43,5 @@ EXPOSE 9229
 # start sign service
 WORKDIR /usr/local/lykke/monero
 
-CMD ['node', 'sign.js']
+CMD ['node', 'api.js']
 

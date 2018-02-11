@@ -2,7 +2,6 @@
 #include "boost/none_t.hpp"
 #include "string_coding.h"
 
-
 namespace tools {
 
 	using v8::Context;
@@ -35,6 +34,8 @@ namespace tools {
 	}
 
 	XMR::~XMR() {
+		this->onTx.Reset();
+		this->onBlock.Reset();
 	}
 
 
@@ -50,19 +51,24 @@ namespace tools {
 		NODE_SET_PROTOTYPE_METHOD(tpl, "testnet", testnet);
 		NODE_SET_PROTOTYPE_METHOD(tpl, "address", address);
 		NODE_SET_PROTOTYPE_METHOD(tpl, "addressDecode", addressDecode);
+		NODE_SET_PROTOTYPE_METHOD(tpl, "addressEncode", addressEncode);
 		NODE_SET_PROTOTYPE_METHOD(tpl, "connect", connect);
 		NODE_SET_PROTOTYPE_METHOD(tpl, "disconnect", disconnect);
 		NODE_SET_PROTOTYPE_METHOD(tpl, "connected", connected);
 		NODE_SET_PROTOTYPE_METHOD(tpl, "refresh", refresh);
 		NODE_SET_PROTOTYPE_METHOD(tpl, "refresh_and_store", refresh_and_store);
+		NODE_SET_PROTOTYPE_METHOD(tpl, "close", close);
+		NODE_SET_PROTOTYPE_METHOD(tpl, "store", store);
 		NODE_SET_PROTOTYPE_METHOD(tpl, "rescan", rescan);
 		NODE_SET_PROTOTYPE_METHOD(tpl, "balances", balances);
+		NODE_SET_PROTOTYPE_METHOD(tpl, "height", height);
 		NODE_SET_PROTOTYPE_METHOD(tpl, "cleanup", cleanup);
 		NODE_SET_PROTOTYPE_METHOD(tpl, "createIntegratedAddress", createIntegratedAddress);
 		NODE_SET_PROTOTYPE_METHOD(tpl, "createPaperWallet", createPaperWallet);
 		NODE_SET_PROTOTYPE_METHOD(tpl, "openPaperWallet", openPaperWallet);
 		NODE_SET_PROTOTYPE_METHOD(tpl, "openViewWallet", openViewWallet);
 		NODE_SET_PROTOTYPE_METHOD(tpl, "openViewWalletOffline", openViewWalletOffline);
+		NODE_SET_PROTOTYPE_METHOD(tpl, "setCallbacks", setCallbacks);
 		NODE_SET_PROTOTYPE_METHOD(tpl, "createUnsignedTransaction", createUnsignedTransaction);
 		NODE_SET_PROTOTYPE_METHOD(tpl, "signTransaction", signTransaction);
 		NODE_SET_PROTOTYPE_METHOD(tpl, "submitSignedTransaction", submitSignedTransaction);
@@ -141,12 +147,12 @@ namespace tools {
 		Isolate* isolate = args.GetIsolate();
 		XMR* xmr = ObjectWrap::Unwrap<XMR>(args.Holder());
 
-		if (args.Length() != 1 || !args[0]->IsString()) {
-			isolate->ThrowException(Exception::TypeError(String::NewFromUtf8(isolate, "Required arguments: string spendKey")));
+		if (args.Length() != 2 || !args[0]->IsString() || !args[1]->IsString()) {
+			isolate->ThrowException(Exception::TypeError(String::NewFromUtf8(isolate, "Required arguments: string address, string seed")));
 			return;
 		}
 
-		std::string spendKey(*v8::String::Utf8Value(args[0]->ToString()));
+		std::string spendKey(*v8::String::Utf8Value(args[1]->ToString()));
 
 		if (!xmr->wallet->openPaperWallet(spendKey)) {
 			isolate->ThrowException(Exception::TypeError(String::NewFromUtf8(isolate, "Cannot open wallet from spendKey: invalid key provided")));
@@ -201,6 +207,20 @@ namespace tools {
 		}
 	}
 
+	void XMR::setCallbacks(const FunctionCallbackInfo<Value>& args) {
+		Isolate* isolate = args.GetIsolate();
+		XMR* xmr = ObjectWrap::Unwrap<XMR>(args.Holder());
+
+		if (args.Length() != 2 || !args[0]->IsFunction() || !args[1]->IsFunction()) {
+			isolate->ThrowException(Exception::TypeError(String::NewFromUtf8(isolate, "Required arguments: function onTx, function onBlock")));
+			return;
+		}
+
+		xmr->onTx.Reset(isolate, Local<Function>::Cast(args[0]));
+		xmr->onBlock.Reset(isolate, Local<Function>::Cast(args[1]));
+		xmr->wallet->callback(xmr);
+	}
+
 	void XMR::address(const FunctionCallbackInfo<Value>& args) {
 		Isolate* isolate = args.GetIsolate();
 		XMR* obj = ObjectWrap::Unwrap<XMR>(args.Holder());
@@ -213,7 +233,7 @@ namespace tools {
 		XMR* obj = ObjectWrap::Unwrap<XMR>(args.Holder());
 
 		if (args.Length() != 1 || !args[0]->IsString()) {
-			isolate->ThrowException(Exception::TypeError(String::NewFromUtf8(isolate, "Required arguments: string spendKey")));
+			isolate->ThrowException(Exception::TypeError(String::NewFromUtf8(isolate, "Required arguments: string address")));
 			return;
 		}
 
@@ -228,6 +248,22 @@ namespace tools {
 		}
 
 		args.GetReturnValue().Set(ret);
+	}
+
+	void XMR::addressEncode(const FunctionCallbackInfo<Value>& args) {
+		Isolate* isolate = args.GetIsolate();
+		XMR* obj = ObjectWrap::Unwrap<XMR>(args.Holder());
+
+		if (args.Length() != 2 || !args[0]->IsString() || !args[1]->IsString()) {
+			isolate->ThrowException(Exception::TypeError(String::NewFromUtf8(isolate, "Required arguments: string address, string paymentId")));
+			return;
+		}
+
+		std::string address = *v8::String::Utf8Value(args[0]->ToString());
+		std::string paymentId = *v8::String::Utf8Value(args[1]->ToString());
+		std::string encoded = obj->wallet->addressEncode(address, paymentId);
+
+		args.GetReturnValue().Set(String::NewFromUtf8(isolate, encoded.c_str()));
 	}
 
 	void XMR::testnet(const FunctionCallbackInfo<Value>& args) {
@@ -281,6 +317,23 @@ namespace tools {
 		args.GetReturnValue().Set(Boolean::New(isolate, obj->wallet->refresh_and_store()));
 	}
 
+	void XMR::close(const FunctionCallbackInfo<Value>& args) {
+		Isolate* isolate = args.GetIsolate();
+		XMR* obj = ObjectWrap::Unwrap<XMR>(args.Holder());
+		args.GetReturnValue().Set(Boolean::New(isolate, obj->wallet->close()));
+	}
+
+	void XMR::store(const FunctionCallbackInfo<Value>& args) {
+		Isolate* isolate = args.GetIsolate();
+		XMR* obj = ObjectWrap::Unwrap<XMR>(args.Holder());
+		try {
+			obj->wallet->store();
+			args.GetReturnValue().Set(Boolean::New(isolate, true));
+		} catch (...) {
+			args.GetReturnValue().Set(Boolean::New(isolate, false));
+		}
+	}
+
 	void XMR::rescan(const FunctionCallbackInfo<Value>& args) {
 		Isolate* isolate = args.GetIsolate();
 		XMR* obj = ObjectWrap::Unwrap<XMR>(args.Holder());
@@ -293,13 +346,20 @@ namespace tools {
 		Isolate* isolate = args.GetIsolate();
 		XMR* obj = ObjectWrap::Unwrap<XMR>(args.Holder());
 
-		uint64_t balance, unlocked;
+		uint64_t balance = 0, unlocked = 0;
 		obj->wallet->balances(balance, unlocked);
 
 		Local<Object> ret = Object::New(isolate);
 		ret->Set(String::NewFromUtf8(isolate, "balance"), String::NewFromUtf8(isolate, int64ToStr(balance).c_str()));
 		ret->Set(String::NewFromUtf8(isolate, "unlocked"), String::NewFromUtf8(isolate, int64ToStr(unlocked).c_str()));
 		args.GetReturnValue().Set(ret);
+	}
+
+	void XMR::height(const FunctionCallbackInfo<Value>& args) {
+		Isolate* isolate = args.GetIsolate();
+		XMR* obj = ObjectWrap::Unwrap<XMR>(args.Holder());
+
+		args.GetReturnValue().Set(String::NewFromUtf8(isolate, int64ToStr(obj->wallet->nodeHeight()).c_str()));
 	}
 
 	void XMR::exportOutputs(const FunctionCallbackInfo<Value>& args) {
@@ -338,13 +398,17 @@ namespace tools {
 		tx.mixins = obj->Get(String::NewFromUtf8(isolate, "mixins"))->Int32Value();
 		tx.unlock_time = obj->Get(String::NewFromUtf8(isolate, "unlock"))->Int32Value();
 
+		if (!obj->Get(String::NewFromUtf8(isolate, "paymentId"))->IsNullOrUndefined()) {
+			tx.payment_id = std::string(*v8::String::Utf8Value(obj->Get(String::NewFromUtf8(isolate, "paymentId"))->ToString()));
+		}
+
 		// logstream << "priority " << tx.priority << ", mixins " << tx.mixins << ", unlock_time " << tx.unlock_time << EOL;
 
 		Handle<Array> array = Handle<Array>::Cast(obj->Get(String::NewFromUtf8(isolate, "destinations")));
 		for (uint32_t i = 0; i < array->Length(); i++) {
-			Local<Object> destination =  array->Get(i)->ToObject(context).ToLocalChecked();
-			std::string address(*v8::String::Utf8Value(destination->Get(String::NewFromUtf8(isolate, "address"))->ToString()));
-			std::string amount(*v8::String::Utf8Value(destination->Get(String::NewFromUtf8(isolate, "amount"))->ToString()));
+			Handle<Array> destination = Handle<Array>::Cast(array->Get(i));
+			std::string amount(*v8::String::Utf8Value(destination->Get(0)->ToString()));
+			std::string address(*v8::String::Utf8Value(destination->Get(1)->ToString()));
 			XMRDest dest;
 			dest.address = address;
 			dest.amount = strToInt64(amount);
@@ -424,7 +488,7 @@ namespace tools {
 				}
 			}
 		} else {
-			error = std::string("-Invalid data type ") + std::to_string(typ);
+			error = std::string("Invalid data type ") + std::to_string(typ);
 			ret->Set(String::NewFromUtf8(isolate, "error"), String::NewFromUtf8(isolate, error.c_str()));
 		}
 
@@ -455,15 +519,15 @@ namespace tools {
 			if (isError(error)) {
 				ret->Set(String::NewFromUtf8(isolate, "error"), String::NewFromUtf8(isolate, error.c_str()));
 				
-				if (error != "No connection to daemon" && error != "Daemon is busy") {
-					std::string secondError = xmr->wallet->exportOutputs(data);
-					if (isError(secondError)) {
-						error = "Double error: " + error + ", " + secondError;
-						ret->Set(String::NewFromUtf8(isolate, "error"), String::NewFromUtf8(isolate, error.c_str()));
-					} else {
-						ret->Set(String::NewFromUtf8(isolate, "outputs"), String::NewFromUtf8(isolate, data.c_str()));
-					}
-				}
+				// if (error != "No connection to daemon" && error != "Daemon is busy") {
+				// 	std::string secondError = xmr->wallet->exportOutputs(data);
+				// 	if (isError(secondError)) {
+				// 		error = "Double error: " + error + ", " + secondError;
+				// 		ret->Set(String::NewFromUtf8(isolate, "error"), String::NewFromUtf8(isolate, error.c_str()));
+				// 	} else {
+				// 		ret->Set(String::NewFromUtf8(isolate, "outputs"), String::NewFromUtf8(isolate, data.c_str()));
+				// 	}
+				// }
 			} else {
 				ret->Set(String::NewFromUtf8(isolate, "info"), txInfoToObj(isolate, info));
 			}
@@ -531,7 +595,7 @@ namespace tools {
 			txObj->Set(String::NewFromUtf8(isolate, "id"), String::NewFromUtf8(isolate, tx.id.c_str()));
 		}
 		if (!tx.payment_id.empty() && tx.payment_id != "0000000000000000") {
-			txObj->Set(String::NewFromUtf8(isolate, "payment_id"), String::NewFromUtf8(isolate, tx.payment_id.c_str()));
+			txObj->Set(String::NewFromUtf8(isolate, "paymentId"), String::NewFromUtf8(isolate, tx.payment_id.c_str()));
 		}
 		if (!tx.key.empty()) {
 			txObj->Set(String::NewFromUtf8(isolate, "key"), String::NewFromUtf8(isolate, tx.key.c_str()));
@@ -546,7 +610,11 @@ namespace tools {
 		if (tx.timestamp != 0) {
 			txObj->Set(String::NewFromUtf8(isolate, "timestamp"), String::NewFromUtf8(isolate, int64ToStr(tx.timestamp).c_str()));
 		}
+		if (tx.lock != 0) {
+			txObj->Set(String::NewFromUtf8(isolate, "lock"), String::NewFromUtf8(isolate, int64ToStr(tx.lock).c_str()));
+		}
 
+		txObj->Set(String::NewFromUtf8(isolate, "height"), String::NewFromUtf8(isolate, int64ToStr(tx.height).c_str()));
 		txObj->Set(String::NewFromUtf8(isolate, "in"), Boolean::New(isolate, tx.in));
 
 		if (!tx.state.empty()) {
@@ -637,4 +705,52 @@ namespace tools {
 		return str.size() > 0;
 		// return str.size() > 0 && memcmp(str.data(), "-", 1) == 0;
 	}
+
+	//----------------- i_wallet2_callback ---------------------
+	void XMR::on_new_block(uint64_t height, const cryptonote::block& block) {
+		Isolate * isolate = Isolate::GetCurrent();
+		auto local = Local<Function>::New(isolate, onBlock);
+
+		const unsigned argc = 1;
+		Local<Value> argv[argc] = { String::NewFromUtf8(isolate, int64ToStr(height).c_str()) };
+
+		local->Call(isolate->GetCurrentContext()->Global(), argc, argv);
+	}
+
+	void XMR::on_money_received(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& tx, uint64_t amount) {
+		// std::cout << "on_money_received " << txid << " " << amount << "\n";
+		on_tx(true, txid);
+	}
+
+	void XMR::on_unconfirmed_money_received(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& tx, uint64_t amount) {
+		// std::cout << "on_unconfirmed_money_received " << txid << " " << amount << "\n";
+		on_tx(true, txid);
+	}
+
+	void XMR::on_money_spent(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& in_tx, uint64_t amount, const cryptonote::transaction& spend_tx) {
+		// std::cout << "on_money_spent " << txid << " " << amount << "\n";
+		on_tx(false, txid);
+	}
+
+	void XMR::on_skip_transaction(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& tx) {
+		// std::cout << "on_skip_transaction " << txid << "\n";
+		on_tx(false, txid);
+	}
+
+	void XMR::on_tx(bool in, const crypto::hash &txid) {
+		Isolate * isolate = Isolate::GetCurrent();
+		auto local = Local<Function>::New(isolate, onTx);
+
+		// std::vector<XMRTxInfo> txs;
+		// std::string error = wallet->transactions(epee::string_tools::pod_to_hex(txid), in, !in, txs);
+		// if (txs.size() == 0) {
+		// 	std::cout << "============== +++++++++++++++ ----------------- " <<  epee::string_tools::pod_to_hex(txid) << "\n";
+		// }
+
+		const unsigned argc = 2;
+		Local<Value> argv[argc] = { Boolean::New(isolate, in), String::NewFromUtf8(isolate, epee::string_tools::pod_to_hex(txid).c_str()) };
+
+		local->Call(isolate->GetCurrentContext()->Global(), argc, argv);
+	}
+
 }

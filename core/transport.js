@@ -54,7 +54,7 @@ class HttpTransport {
 					log.debug(`Response ${res.statusCode}: ${res.headers['content-type']} ${body}`);
 				}
 				if (err) {
-					log.warn(`Error ${err} for ${method} to ${path}`);
+					log.warn(err, `Error for ${method} to ${path}`);
 					reject(res ? res.statusCode : err || err);
 				} else if (res.statusCode >= 200 && res.statusCode < 300) {
 					var json;
@@ -95,7 +95,7 @@ class HttpTransport {
 							}
 						}
 					} catch (e) {
-						log.debug(`Error ${e} for ${method} to ${path}`);
+						log.debug(e, `Error for ${method} to ${path}`);
 						reject(e);
 					}
 				} else {
@@ -120,7 +120,7 @@ class HttpTransport {
 			error = typeof error.code === 'number' ? error.code : error;
 
 			if (!retryPolicy(error, attempt)) {
-				log.error(`Unretriable error ${e} for ${method} to ${this.conf.url + (path === '/' || !path ? '' : path)}`);
+				log.error(e, `Unretriable error for ${method} to ${this.conf.url + (path === '/' || !path ? '' : path)}`);
 				throw new Error(`Unretriable error for ${this.conf.url + (path === '/' || !path ? '' : path)}: ${e}`);
 			}
 		}

@@ -1,0 +1,11 @@
+{
+	"version": "0.0.1",
+	"chain": "ripple",
+	"serviceName": "RippleSignService",
+	"port": 5003,
+	"log": "debug",
+	"testnet": true,
+	"wallet": {
+		"address": "rUkPdHs2a5Woaq1isxNGsWQW1MKiyZbzgB"
+	}
+}

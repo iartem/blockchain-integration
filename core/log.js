@@ -45,8 +45,7 @@ module.exports = label => {
 		format: labelledFormat,
 		levels: levels.levels,
 		transports: [
-			new winston.transports.File({ filename: CFG ? `${CFG.chain}-error.log` : 'default-error.log', level: 'error' }),
-			new winston.transports.File({ filename: CFG ? `${CFG.chain}.log` : 'default.log' })
+			new winston.transports.File({ filename: CFG ? `${CFG.chain}-error.log` : 'default-error.log', level: 'error' })
 		]
 	});
 
@@ -65,7 +64,26 @@ module.exports = label => {
 
 	loggers.push(logger);
 
-	return logger;
+	function logit(level, error, string) {
+		if (!(error instanceof Error)) {
+			string = error;
+			error = undefined;
+		}
+
+		if (error) {
+			logger[level](`${string} / error ${error.message || error.code} stack ${JSON.stringify(error.stack)}`);
+		} else {
+			logger[level](string);
+		}
+	}
+
+	return {
+		monitor: logit.bind(null, 'monitor'),
+		error: logit.bind(null, 'error'), 
+		warn: logit.bind(null, 'warn'),
+		info: logit.bind(null, 'info'),
+		debug: logit.bind(null, 'debug'),
+	};
 };
 
 module.exports.setLevel = (level) => {

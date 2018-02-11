@@ -10,30 +10,14 @@
 #include "misc_log_ex.h"
 #include <boost/format.hpp>
 
-#define LOCK_IDLE_SCOPE() \
-  bool auto_refresh_enabled = m_auto_refresh_enabled.load(std::memory_order_relaxed); \
-  m_auto_refresh_enabled.store(false, std::memory_order_relaxed); \
-  /* stop any background refresh, and take over */ \
-  stop(); \
-  m_idle_mutex.lock(); \
-  while (m_auto_refresh_refreshing) \
-	m_idle_cond.notify_one(); \
-  m_idle_mutex.unlock(); \
-/*  if (auto_refresh_run)*/ \
-	/*m_auto_refresh_thread.join();*/ \
-  boost::unique_lock<boost::mutex> lock(m_idle_mutex); \
-  epee::misc_utils::auto_scope_leave_caller scope_exit_handler = epee::misc_utils::create_scope_leave_handler([&](){ \
-	m_auto_refresh_enabled.store(auto_refresh_enabled, std::memory_order_relaxed); \
-  })
-
 using namespace cryptonote;
 
 namespace tools {
 
 	XMRWallet::XMRWallet(bool testnet) : wallet2(testnet) {
-		std::string log_path = "wallet.log";
-		mlog_configure(log_path, false);
-		mlog_set_log_level(0);
+		// std::string log_path = "wallet.log";
+		// mlog_configure(log_path, false);
+		// mlog_set_log_level(0);
 	}
 
 	XMRKeys XMRWallet::createPaperWallet(const std::string &language) {
@@ -80,19 +64,6 @@ namespace tools {
 		m_keys_file = address_string + ".keys";
 		m_wallet_file = address_string;
 
-		boost::system::error_code ignored_ec;
-		if (boost::filesystem::exists(m_wallet_file, ignored_ec) || boost::filesystem::exists(m_keys_file, ignored_ec)) {
-			try {
-				if (load_keys(m_keys_file, "")) {
-					load(m_wallet_file, "");
-					return 0;
-				}
-			} catch (...) {
-				boost::filesystem::remove(m_wallet_file);
-				boost::filesystem::remove(m_keys_file);
-			}
-		}
-
 		bool has_payment_id;
 		cryptonote::account_public_address address;
 		crypto::hash8 new_payment_id;
@@ -109,6 +80,19 @@ namespace tools {
 		m_account.create_from_viewkey(address, viewkey);
 		m_account_public_address = address;
 		m_watch_only = true;
+
+		boost::system::error_code ignored_ec;
+		if (boost::filesystem::exists(m_wallet_file, ignored_ec) || boost::filesystem::exists(m_keys_file, ignored_ec)) {
+			try {
+				if (load_keys(m_keys_file, "")) {
+					load(m_wallet_file, "");
+					return 0;
+				}
+			} catch (...) {
+				boost::filesystem::remove(m_wallet_file);
+				boost::filesystem::remove(m_keys_file);
+			}
+		}
 
 		if (!store_keys(m_keys_file, "", true)) {
 			return -3;
@@ -171,19 +155,19 @@ namespace tools {
 	}
 
 	bool XMRWallet::disconnect() {
-		LOCK_IDLE_SCOPE();
 		this->m_http_client.disconnect();
 		return this->deinit();
 	}
 
 	bool XMRWallet::cleanup() {
-		clear();
+		disconnect();
 		if (!m_wallet_file.empty()) {
 			boost::filesystem::remove(m_wallet_file);
 		}
 		if (!m_keys_file.empty()) {
 			boost::filesystem::remove(m_keys_file);
 		}
+		clear();
 		return true;
 	}
 
@@ -245,32 +229,48 @@ namespace tools {
 			dsts.push_back(de);
 		}
 
+		if (!tx.payment_id.empty()) {
+			if (extra.size() > 0) {
+				return "Multiple payment ids in a transaction";
+			}
+
+			crypto::hash8 payment_id;
+			if (tools::wallet2::parse_short_payment_id(tx.payment_id, payment_id)) {
+				std::string extra_nonce;
+				set_encrypted_payment_id_to_tx_extra_nonce(extra_nonce, payment_id);
+				if (!add_extra_nonce_to_tx_extra(extra, extra_nonce)) {
+					return "Failed to add short payment id to transaction: " + epee::string_tools::pod_to_hex(payment_id);
+				}
+				// std::cout << "================ put payment_id in extras: " << epee::string_tools::pod_to_hex(payment_id) << " (" << tx.payment_id << ")\n";
+			} else {
+				return "Invalid payment_id";
+			}
+		}
+
 		std::vector<wallet2::pending_tx> ptx;
 		try {
 			ptx = create_transactions_2(dsts, tx.mixins, tx.unlock_time, tx.priority, extra, true);
 		} catch (const tools::error::not_enough_money&) {
-			return "Not enough money";
+			return "NOT_ENOUGH_FUNDS";
 		} catch (const tools::error::zero_destination&) {
-			return "Amount zero would reach destination";
+			return "NOT_ENOUGH_AMOUNT";
 		} catch (const tools::error::wallet_internal_error &e) {
 			return e.what();
 			// return "-Internal wallet error";
 		} catch (const tools::error::tx_not_possible &e) {
-			return e.what();
-		} catch(const std::runtime_error &e) {
-			return std::string("Runtime error when creating transaction: ") + e.what();
+			return "NOT_ENOUGH_OUTPUTS";
 		} catch(const std::exception &e) {
 			return std::string("Exception when creating transaction: ") + e.what();
 		} catch (...) {
 			return "Internal XMR error";
 		}
 
-		for (auto &tx: ptx) {
-			tx_construction_data construction_data = tx.construction_data;
+		for (wallet2::pending_tx &pend: ptx) {
+			tx_construction_data &construction_data = pend.construction_data;
 			// Short payment id is encrypted with tx_key. 
 			// Since sign_tx() generates new tx_keys and encrypts the payment id, we need to save the decrypted payment ID
 			// Get decrypted payment id from pending_tx
-			crypto::hash8 payment_id = get_short_payment_id(tx);
+			crypto::hash8 payment_id = get_short_payment_id(pend);
 			if (payment_id != null_hash8) {
 				// Remove encrypted
 				remove_field_from_tx_extra(construction_data.extra, typeid(cryptonote::tx_extra_nonce));
@@ -279,7 +279,6 @@ namespace tools {
 				set_encrypted_payment_id_to_tx_extra_nonce(extra_nonce, payment_id);
 				if (!add_extra_nonce_to_tx_extra(construction_data.extra, extra_nonce)) {
 					LOG_ERROR("Failed to add decrypted payment id to tx extra");
-					return false;
 				}
 				LOG_PRINT_L1("Decrypted payment ID: " << payment_id);       
 			}
@@ -290,7 +289,7 @@ namespace tools {
 
 			std::set<size_t> indexes;
 
-			for (auto &tx: ptx) {
+			for (wallet2::pending_tx &tx: ptx) {
 				// Save tx construction_data to unsigned_tx_set
 				arch.txs.push_back(tx.construction_data);     
 				
@@ -337,10 +336,49 @@ namespace tools {
 
 		return "";
 	}
+
+	void XMRWallet::print_pid(std::string msg, std::vector<uint8_t> &extra) {
+		std::vector<tx_extra_field> tx_extra_fields;
+		if (parse_tx_extra(extra, tx_extra_fields))
+		{
+		  tx_extra_nonce en;
+		  if (find_tx_extra_field_by_type(tx_extra_fields, en))
+		  {
+		    crypto::hash8 id = null_hash8;
+		    if (get_encrypted_payment_id_from_tx_extra_nonce(en.nonce, id)){
+				std::cout << "================ print_pid " << msg << ": " << epee::string_tools::pod_to_hex(id) << "\n";
+		    }
+		  }
+		}
+	}
+
+	crypto::hash8 XMRWallet::get_short_pid(const pending_tx &ptx) 
+	{
+	  crypto::hash8 payment_id8 = null_hash8;
+	  std::vector<tx_extra_field> tx_extra_fields;
+	  if(!parse_tx_extra(ptx.tx.extra, tx_extra_fields)) {
+	  	std::cout << "=============== get_short_pid 1\n";
+	    return payment_id8;
+	  }
+	  cryptonote::tx_extra_nonce extra_nonce;
+	  if (find_tx_extra_field_by_type(tx_extra_fields, extra_nonce))
+	  {
+	  	std::cout << "=============== get_short_pid 2\n";
+	    if(get_encrypted_payment_id_from_tx_extra_nonce(extra_nonce.nonce, payment_id8))
+	    {
+	  	std::cout << "=============== get_short_pid 3: " << epee::string_tools::pod_to_hex(payment_id8) << "\n";
+	      decrypt_payment_id(payment_id8, ptx.dests[0].addr.m_view_public_key, ptx.tx_key); 
+	  	std::cout << "=============== get_short_pid 4: " << epee::string_tools::pod_to_hex(payment_id8) << "\n";
+	    }
+	  }
+	  return payment_id8;
+	}
+
 	
 	std::string XMRWallet::signTransaction(std::string &data) {
 		unsigned_tx_set exported_txs;
 		std::vector<size_t> keyIdxs;
+		std::vector<uint8_t> archextra;
 		std::vector<crypto::key_image> keyImages;
 
 		uint32_t type = dataType(data);
@@ -465,9 +503,16 @@ namespace tools {
 				ptx.dust_added_to_fee = false;
 				ptx.change_dts = sd.change_dts;
 				ptx.selected_transfers = sd.selected_transfers;
-				ptx.tx_key = rct::rct2sk(rct::identity()); // don't send it back to the untrusted view wallet
+				ptx.tx_key = tx_key;
+				// std::cout << "================ tx_key: " << epee::string_tools::pod_to_hex(tx_key) << "\n";
+				// ptx.tx_key = rct::rct2sk(rct::identity()); // don't send it back to the untrusted view wallet
 				ptx.dests = sd.dests;
 				ptx.construction_data = sd;
+
+				// crypto::hash8 payment_id = get_short_payment_id(ptx);
+				// if (payment_id != null_hash8) {
+					// std::cout << "================ payment_id in signing: " << epee::string_tools::pod_to_hex(payment_id) << "\n";
+				// }
 			}
 		} catch (const error::tx_not_constructed&) {
 			return "Failed to construct tx in cryptonote";
@@ -579,16 +624,12 @@ namespace tools {
 		try {
 			commit_tx(ptx);
 		} catch (const tools::error::daemon_busy&) {
-			return "Daemon is busy";
+			return "CONNECTION";
 		} catch (const tools::error::no_connection_to_daemon&) {
-			return "No connection to daemon";
+			return "CONNECTION";
 		} catch (const tools::error::tx_rejected& e) {
 			std::string reason = e.reason();
 			return "Transaction was rejected by daemon with status " + e.status() + (reason.empty() ? "" : ", reason " + reason);
-		} catch (const std::exception &e) {
-			return "Unknown exception " + std::string(e.what()); 
-		} catch(const std::runtime_error &e) {
-			return std::string("Runtime error when submitting transaction: ") + e.what();
 		} catch(const std::exception &e) {
 			return std::string("Exception when submitting transaction: ") + e.what();
 		} catch (...) {
@@ -599,6 +640,11 @@ namespace tools {
 		unconfirmed_transfer_details& td = m_unconfirmed_txs[hash];
 
 		infoFromUnconfirmedTransaction(info, hash, td);
+
+		// crypto::hash8 payment_id = get_short_payment_id(ptx[0]);
+		// if (payment_id != null_hash8) {
+		// 	std::cout << "================ payment_id in submit: " << epee::string_tools::pod_to_hex(payment_id) << "\n";
+		// }
 		// info.key = epee::string_tools::pod_to_hex(ptx[0].tx_key);
 
 		// LOG_PRINT_L3("transaction " << info.id << " tx_key: [" << ptx[0].key_images << "] key " << info.key);
@@ -712,23 +758,64 @@ namespace tools {
 
 		addr.address = cryptonote::get_account_address_as_str(testnet(), address);
 		if (has_payment_id) {
-			std::ostringstream oss;
-			oss << payment_id;
-			std::string payment_id_str(oss.str());
-			addr.payment_id = payment_id_str;
+			addr.payment_id = epee::string_tools::pod_to_hex(payment_id);
+			// std::ostringstream oss;
+			// oss << payment_id;
+			// std::string payment_id_str(oss.str());
+			// addr.payment_id = payment_id_str;
 		}
 		return addr;
 	}
+
+	std::string XMRWallet::addressEncode(std::string &address_string, std::string &payment_id_string) {
+		bool has_payment_id;
+		cryptonote::account_public_address address;
+		crypto::hash8 payment_id;
+		if (!cryptonote::get_account_integrated_address_from_str(address, has_payment_id, payment_id, testnet(), address_string)) {
+			return "";
+		}
+
+		if (!tools::wallet2::parse_short_payment_id(payment_id_string, payment_id)) {
+			return "";
+		}
+
+		return get_account_integrated_address_as_str(testnet(), address, payment_id);
+	}
+
 	
 	bool XMRWallet::refresh_and_store() {
 		try {
 			tools::wallet2::refresh();
-			// rescan_spent();
+			rescan_spent();
 			store();
 		} catch (...) {
 			return false;
 		}
 		return true;
+	}
+
+	bool XMRWallet::close() {
+		try {
+			try {
+				disconnect();
+			} catch (...) {}
+			store();
+		} catch (...) {
+			clear();
+			return false;
+		}
+		clear();
+		return true;
+	}
+
+	uint64_t XMRWallet::nodeHeight() {
+		std::string error;
+		uint64_t daemon = get_daemon_blockchain_height(error);
+		if (error.empty()) {
+			return daemon;
+		} else {
+			return 0;
+		}
 	}
 
 	std::string XMRWallet::refresh(bool &refreshed) {
@@ -741,79 +828,136 @@ namespace tools {
 			refreshed = false;
 
 			if (error.empty()) {
-				if (daemon > current) {
-					LOG_ERROR("XMRWallet::refresh current " << current << " daemon " << daemon);
+				// if (daemon > current) {
+					// LOG_ERROR("XMRWallet::refresh current " << current << " daemon " << daemon);
 					uint64_t pulled = 0;
-					tools::wallet2::refresh(daemon, pulled);
+					tools::wallet2::refresh(0, pulled);
+					// tools::wallet2::refresh(daemon, pulled);
 					rescan_spent();
 					refreshed = true;
 					return "";
-				} else {
-					LOG_ERROR("XMRWallet::refresh won't refresh");
-					return "";
-				}
+				// } else {
+				// 	// LOG_ERROR("XMRWallet::refresh won't refresh");
+				// 	return "";
+				// }
 			} else {
-				LOG_ERROR("XMRWallet::refresh error: " << error);
-				return std::string("-") + error;
+				// LOG_ERROR("XMRWallet::refresh error: " << error);
+				return error;
 			}
 		} catch (...) {
-			return "-Exception raised when refreshing";
+			return "Exception raised when refreshing";
 		}
 	}
 
-	std::string XMRWallet::transactions(std::string payment_id_str, bool in, bool out, std::vector<XMRTxInfo> &txs) {
+	std::string XMRWallet::transactions(std::string txid_str, bool in, bool out, std::vector<XMRTxInfo> &txs) {
 		uint64_t min_height = 0;
 		uint64_t max_height = (uint64_t)-1;
-		uint64_t wallet_height = get_blockchain_current_height();
+		// uint64_t wallet_height = get_blockchain_current_height();
 
-		crypto::hash payment_id;
-		if (!payment_id_str.empty()) {
-			if (!tools::wallet2::parse_payment_id(payment_id_str, payment_id)) {
-				return "-Cannot parse payment id";
+		crypto::hash txid;
+		if (!txid_str.empty()) {
+			cryptonote::blobdata txid_data;
+			if(!epee::string_tools::parse_hexstr_to_binbuff(txid_str, txid_data) || txid_data.size() != sizeof(crypto::hash)) {
+				return "Cannot parse txid";
 			}
+			txid = *reinterpret_cast<const crypto::hash*>(txid_data.data());
 		}
+
+		update_pool_state();
 
 		// incoming transactions
 		if (in) {
 
-			if (payment_id_str.empty()) {
+			const uint64_t bc_height = get_blockchain_current_height();
+
+			std::list<std::pair<crypto::hash, tools::wallet2::payment_details>> payments;
+			get_payments(payments, min_height, max_height);
+
+			// std::cout << "&&&&&&&&&&&&& payments " << payments.size() << ", have " << txs.size() << "\n";
+		
+			for (std::list<std::pair<crypto::hash, tools::wallet2::payment_details>>::const_iterator i = payments.begin(); i != payments.end(); ++i) {
+				const tools::wallet2::payment_details &pd = i->second;
+
+				// std::cout << "&&&&&&&&&&&&& payment " << epee::string_tools::pod_to_hex(pd.m_tx_hash) << ", " << epee::string_tools::pod_to_hex(i->first) << ", " << epee::string_tools::pod_to_hex(txid) << "\n";
+		
+				if (!txid_str.empty() && txid != pd.m_tx_hash) {
+					continue;
+				}
+
+				std::string id = epee::string_tools::pod_to_hex(i->first);
+				if (id.substr(16).find_first_not_of('0') == std::string::npos){
+					id = id.substr(0,16);
+				}
+				
+				XMRTxInfo info;
+				info.id = epee::string_tools::pod_to_hex(pd.m_tx_hash);
+				info.payment_id = id;
+				info.amount = pd.m_amount;
+				info.timestamp = pd.m_timestamp;
+				info.height = pd.m_block_height;
+				// info.unlocked = is_tx_spendtime_unlocked(tx.unlock_time, wallet_height);
+				info.state = "confirmed";
+				info.in = true;
+				info.fee = 0;
+
+				if (pd.m_unlock_time < CRYPTONOTE_MAX_BLOCK_NUMBER) {
+					uint64_t bh = std::max(pd.m_unlock_time, pd.m_block_height + CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE);
+					info.lock = bh > bc_height ? bh - bc_height : 0;
+				} else {
+					uint64_t current_time = static_cast<uint64_t>(time(NULL));
+					uint64_t threshold = current_time + CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_SECONDS_V2;
+					info.lock = pd.m_unlock_time > threshold ? (pd.m_unlock_time - threshold) / DIFFICULTY_TARGET_V2 : 0;
+				}
+
+				txs.push_back(info);
+			}
+
+			// std::cout << "&&&&&&&&&&&&& payments after " << txs.size() << "\n";
+	
+			// not yet confirmed
+			try {
+				
 				std::list<std::pair<crypto::hash, tools::wallet2::payment_details>> payments;
-				get_payments(payments, min_height, max_height);
+				get_unconfirmed_payments(payments);
+				
+				// std::cout << "&&&&&&&&&&&&& unconfirmed " << payments.size() << ", have " << txs.size() << "\n";
 
 				for (std::list<std::pair<crypto::hash, tools::wallet2::payment_details>>::const_iterator i = payments.begin(); i != payments.end(); ++i) {
 					const tools::wallet2::payment_details &pd = i->second;
+					// std::cout << "&&&&&&&&&&&&& unconfirmed " << epee::string_tools::pod_to_hex(pd.m_tx_hash) << ", " << epee::string_tools::pod_to_hex(i->first) << ", " << epee::string_tools::pod_to_hex(txid) << "\n";
+					if (!txid_str.empty() && txid != pd.m_tx_hash) {
+						continue;
+					}
+					
 					std::string id = epee::string_tools::pod_to_hex(i->first);
+					
 					if (id.substr(16).find_first_not_of('0') == std::string::npos){
 						id = id.substr(0,16);
 					}
-					
+
 					XMRTxInfo info;
 					info.id = epee::string_tools::pod_to_hex(pd.m_tx_hash);
 					info.payment_id = id;
+					crypto::secret_key tx_key;
+					if (get_tx_key(i->first, tx_key)) {
+						info.key = epee::string_tools::pod_to_hex(tx_key);
+					}
 					info.amount = pd.m_amount;
 					info.timestamp = pd.m_timestamp;
-					info.state = "confirmed";
+					info.height = pd.m_block_height;
+					info.state = "unconfirmed";
 					info.in = true;
+					info.lock = 0;
+					info.fee = 0;
 
 					txs.push_back(info);
 				}
-			} else {
-				std::list<tools::wallet2::payment_details> payments;
-				get_payments(payment_id, payments, min_height);
 
-				for (auto pd : payments) {
-					XMRTxInfo info;
-					info.id = epee::string_tools::pod_to_hex(pd.m_tx_hash);
-					info.payment_id = payment_id_str;
-					info.amount = pd.m_amount;
-					info.timestamp = pd.m_timestamp;
-					info.state = "confirmed";
-					info.in = true;
+				// std::cout << "&&&&&&&&&&&&& unconfirmed after " << txs.size() << "\n";
 
-					txs.push_back(info);
-				}
+			} catch (...) {
+				return "-Failed to get pool state";
 			}
-
 		}
 
 		// outgoing transaction
@@ -824,6 +968,10 @@ namespace tools {
 			
 			for (std::list<std::pair<crypto::hash, tools::wallet2::confirmed_transfer_details>>::const_iterator i = payments.begin(); i != payments.end(); ++i) {
 				const tools::wallet2::confirmed_transfer_details &pd = i->second;
+				
+				if (!txid_str.empty() && txid != i->first) {
+					continue;
+				}
 				
 				std::string id = epee::string_tools::pod_to_hex(i->second.m_payment_id);
 				if (id.substr(16).find_first_not_of('0') == std::string::npos){
@@ -843,8 +991,10 @@ namespace tools {
 				info.amount = pd.m_amount_in - change - fee;
 				info.fee = fee;
 				info.timestamp = pd.m_timestamp;
+				info.height = pd.m_block_height;
 				info.state = "confirmed";
 				info.in = false;
+				info.lock = 0;
 
 				for (const auto &d: pd.m_dests) {
 					XMRDest dest;
@@ -853,44 +1003,7 @@ namespace tools {
 					info.destinations.push_back(dest);
 				}
 
-				if (payment_id_str.empty() || payment_id == i->first || payment_id == i->second.m_payment_id) {
-					txs.push_back(info);
-				}
-			}
-
-			// not yet confirmed
-			try {
-				update_pool_state();
-				
-				std::list<std::pair<crypto::hash, tools::wallet2::payment_details>> payments;
-				get_unconfirmed_payments(payments);
-				
-				for (std::list<std::pair<crypto::hash, tools::wallet2::payment_details>>::const_iterator i = payments.begin(); i != payments.end(); ++i) {
-					const tools::wallet2::payment_details &pd = i->second;
-					std::string id = epee::string_tools::pod_to_hex(i->first);
-					
-					if (id.substr(16).find_first_not_of('0') == std::string::npos){
-						id = id.substr(0,16);
-					}
-
-					XMRTxInfo info;
-					info.id = epee::string_tools::pod_to_hex(pd.m_tx_hash);
-					info.payment_id = id;
-					crypto::secret_key tx_key;
-					if (get_tx_key(i->first, tx_key)) {
-						info.key = epee::string_tools::pod_to_hex(tx_key);
-					}
-					info.amount = pd.m_amount;
-					info.timestamp = pd.m_timestamp;
-					info.state = "pool";
-					info.in = false;
-
-					if (payment_id_str.empty() || payment_id == i->first) {
-						txs.push_back(info);
-					}
-				}
-			} catch (...) {
-				return "-Failed to get pool state";
+				txs.push_back(info);
 			}
 
 			// not yet sent or failed
@@ -899,12 +1012,14 @@ namespace tools {
 		
 			for (std::list<std::pair<crypto::hash, tools::wallet2::unconfirmed_transfer_details>>::const_iterator i = upayments.begin(); i != upayments.end(); ++i) {
 				
+				if (!txid_str.empty() && txid != i->first) {
+					continue;
+				}
+				
 				XMRTxInfo info;
 				infoFromUnconfirmedTransaction(info, i->first, i->second);
 
-				if (payment_id_str.empty() || payment_id == i->first || payment_id == i->second.m_payment_id) {
-					txs.push_back(info);
-				}
+				txs.push_back(info);
 
 			}
 		}
@@ -930,7 +1045,9 @@ namespace tools {
 		info.amount = amount - pd.m_change - fee;
 		info.fee = fee;
 		info.timestamp = pd.m_timestamp;
+		info.height = 0;
 		info.in = false;
+		info.lock = 0;
 
 		for (const auto &d: pd.m_dests) {
 			XMRDest dest;

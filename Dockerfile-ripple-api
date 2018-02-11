@@ -1,0 +1,22 @@
+FROM node:8
+
+# copy project files
+CMD mkdir /usr/local/lykke
+COPY core /usr/local/lykke/core
+COPY ripple /usr/local/lykke/ripple
+
+# install project dependencies, build & check c++ module
+RUN cd /usr/local/lykke/core && npm install && \
+	cd /usr/local/lykke/ripple && npm install
+
+# cleanup
+CMD rm -rf /tmp/* && apt clean
+
+# port 3000 is default api port
+EXPOSE 3000
+
+# start sign service
+WORKDIR /usr/local/lykke/ripple
+
+CMD ["/usr/local/bin/node", "api.js"]
+

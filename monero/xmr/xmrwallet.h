@@ -30,6 +30,7 @@ struct XMRDest {
 
 struct XMRTx {
 	std::vector<XMRDest> destinations;
+	std::string payment_id;
 	uint32_t priority;
 	uint32_t unlock_time;
 	uint32_t mixins;
@@ -43,7 +44,9 @@ struct XMRTxInfo {
 	uint64_t amount;
 	uint64_t fee;
 	uint64_t timestamp;
+	uint64_t height;
 	bool in;
+	uint64_t lock;
 	std::string state;
 	std::string error;
 
@@ -112,8 +115,11 @@ namespace tools {
 			std::string submitSignedTransaction(std::string &data, XMRTxInfo &info);
 			std::string address();
 			void balances(uint64_t &balance, uint64_t &unlocked);
+			uint64_t nodeHeight();
 			XMRAddress addressDecode(std::string &address_string);
+			std::string addressEncode(std::string &address_string, std::string &payment_id_string);
 			bool refresh_and_store();
+			bool close();
 			std::string refresh(bool &refreshed);
 			
 			std::string transactions(std::string payment_id_str, bool in, bool out, std::vector<XMRTxInfo> &txs);
@@ -130,16 +136,8 @@ namespace tools {
 			std::string exportKeyImages(std::string &images);
 			std::string importKeyImages(std::string &data, uint64_t &spent, uint64_t &unspent);
 
-		private:
-			std::atomic<bool> m_idle_run;
-			boost::thread m_idle_thread;
-			boost::mutex m_idle_mutex;
-			boost::condition_variable m_idle_cond;
-
-			std::atomic<bool> m_auto_refresh_enabled;
-			bool m_auto_refresh_refreshing;
-			// bool sign_tx(unsigned_tx_set &exported_txs, const std::string &signed_filename, std::vector<wallet2::pending_tx> &txs, bool export_raw);
-
+			void print_pid(std::string msg, std::vector<uint8_t> &extra);
+			crypto::hash8 get_short_pid(const pending_tx &ptx);
 	};
 
 	template <typename T> inline std::string saveGZBase64String(uint32_t type, const T & o) {

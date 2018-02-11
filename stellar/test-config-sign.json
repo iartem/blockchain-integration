@@ -1,0 +1,11 @@
+{
+	"version": "0.0.1",
+	"chain": "stellar",
+	"serviceName": "StellarSignService",
+	"port": 5002,
+	"log": "debug",
+	"testnet": true,
+	"wallet": {
+		"address": "GDZDCMYENMBJ7DHBGSJEU5GXFRSEXCGGWR4J23HVFBQDQ4WGIJLS7CRO"
+	}
+}

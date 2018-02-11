@@ -20,7 +20,11 @@ const utils = {
 			var error;
 			for (var i = 0; i < maxAttempts; i--) {
 				try {
-					resolve(f());
+					let x = f();
+					if (x instanceof Promise) {
+						x = await x;
+					}
+					resolve(x);
 					return;
 				} catch (e) {
 					error = e;

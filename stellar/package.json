@@ -1,0 +1,26 @@
+{
+  "name": "xlm",
+  "version": "0.0.1",
+  "description": "XLM API service for Lykke integration",
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha tests.js"
+  },
+  "keywords": [
+    "lykke",
+    "stellar"
+  ],
+  "author": "Artem Salpagarov",
+  "license": "MIT",
+  "devDependencies": {
+    "mocha": "^4.1.0",
+    "nock": "^9.1.6",
+    "should": "^13.2.0",
+    "simple-mock": "^0.8.0",
+    "supertest": "^3.0.0"
+  },
+  "dependencies": {
+    "big.js": "^5.0.3",
+    "stellar-sdk": "^0.8.0"
+  }
+}

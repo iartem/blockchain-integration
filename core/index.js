@@ -1,6 +1,6 @@
 'use strict';
 
-const index = (settings, routes) => {
+const index = (settings, routes={}) => {
 	const log = require('../core/log.js'),
 		L = log('index');
 
@@ -24,24 +24,27 @@ const index = (settings, routes) => {
 			});
 
 			process.on('uncaughtException', (err) => {
-				L.error(`Uncaught exception ${err} ${err.stack}`);
+				L.error(err, `Uncaught exception`);
 				process.exit(1);
 			});
 
 			process.on('unhandledRejection', (err) => {
-				L.error(`Unhandled rejection ${err} ${err.stack}`);
+				L.error(err, `Unhandled rejection`);
 				process.exit(1);
 			}); 
 
 			let srv = {CFG: CFG, log: require('./log.js')};
 			srv.log.setLevel(CFG.log);
 
-			L.info('Connecting to store');
-			let	Store = require('./store.js'),
-				store = new Store(CFG, log);
-			
-			srv.store = await store.connect();
-			L.info('Connected to store');
+			if ('store' in CFG) {
+				L.info('Connecting to store');
+				let	Store = require('./store.js'),
+					store = new Store(CFG, log);
+				
+				srv.store = await store.connect();
+				L.info('Connected to store');
+			}
+
 			return srv;
 		}).then(srv => {
 			const CFG = srv.CFG,
@@ -61,15 +64,15 @@ const index = (settings, routes) => {
 			app.use(bouncer.middleware());
 
 			app.use(koaBody({
-				jsonLimit: '1024kb'
+				jsonLimit: '10000kb'
 			}));
 
 			app.use(async (ctx, next) => {
 				ctx.store = srv.store;
 				ctx.CFG = srv.CFG;
 
-				L.info(`request ${ctx.path}`)
-				L.debug(`query ${JSON.stringify(ctx.query)} body ${JSON.stringify(ctx.request.body)} params ${JSON.stringify(ctx.params)}`);
+				L.info(`request ${ctx.method} ${ctx.path}`);
+				L.debug(`query ${JSON.stringify(ctx.query)} qs ${ctx.querystring} body ${JSON.stringify(ctx.request.body)} params ${JSON.stringify(ctx.params)}`);
 				const start = Date.now();
 				await next();
 				const ms = Date.now() - start;
@@ -83,21 +86,28 @@ const index = (settings, routes) => {
 				} catch (err) {
 					ctx.status = 400;
 					if (err.name === 'ValidationError') {
+						if (err.bouncer.key) {
+							ctx.body = {
+								errorMessage: 'Validation Error',
+								modelErrors: {
+									[err.bouncer.key]: [err.bouncer.message]
+								},
+								trace: err.stack
+							};
+						} else {
+							ctx.body = {
+								errorMessage: err.bouncer.message,
+								trace: err.stack
+							};
+						}
+					} else if (err.name === 'WalletError') {
+						L.warn(err, `WalletError in wrapper middleware`);
 						ctx.body = {
-							errorMessage: 'Validation Error',
-							modelErrors: {
-								[err.bouncer.key]: err.bouncer.message
-							},
-							trace: err.stack
-						};
-					} else if (err.name === 'XMRError') {
-						L.warning(`XMRError: ${err.message}`);
-						ctx.body = {
-							errorMessage: 'Monero error: ' + (err.message || 'Unknown error'),
+							errorMessage: 'Wallet error: ' + (err.message || 'Unknown error'),
 							trace: err.stack
 						};
 					} else {
-						L.error(`Server error: ${err.message}, stack: ${JSON.stringify(err.stack)}`);
+						L.error(err, `Server error in wrapper middleware`);
 						ctx.status = 500;
 						ctx.body = {
 							errorMessage: 'Server Error: ' + (err.message || JSON.stringify(err)),
@@ -124,11 +134,13 @@ const index = (settings, routes) => {
 			app.use(router.routes())
 				.use(router.allowedMethods());
 
+			L.info(`Starting server on ${CFG.port}`);
 			let server = app.listen(CFG.port);
 
 			srv.app = app;
 			srv.server = server;
 			srv.utils = require('./utils.js');
+			srv.Wallet = require('./wallet.js');
 			srv.Validator = bouncer.Validator;
 			srv.ValidationError = bouncer.ValidationError;
 
@@ -138,16 +150,20 @@ const index = (settings, routes) => {
 			});
 
 
-			srv.close = () => {
+			srv.close = async () => {
 				L.monitor(`Terminating ${CFG.chain} (close)`);
 				srv.server.close();
-				srv.store.close();
+				if (srv.store) {
+					srv.store.close();
+				}
+				await srv.utils.wait(500);
 			};
 
+			L.info(`Done starting chain ${CFG.chain}`);
 			resolve(srv);
 		}, err => {
-			L.error(`Error on initialization: ${err}, won't start`);
-			L.monitor(`Terminating (initialization error)`);
+			L.error(err, `Error on initialization, won't start`);
+			L.monitor('Terminating (initialization error)');
 			process.exit(1);
 		});
 	});

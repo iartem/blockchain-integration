@@ -1,7 +1,7 @@
 {
   "name": "lykke.service.monero.sign",
   "version": "0.0.1",
-  "description": "Monero Sign service for Lykke",
+  "description": "Monero integraion for Lykke",
   "main": "index.js",
   "scripts": {
     "test": "mocha tests.js"

@@ -1,0 +1,17 @@
+{
+	"version": "0.0.1",
+	"chain": "stellar",
+	"serviceName": "StellarApiService",
+	"port": 3002,
+	"log": "debug",
+	"testnet": true,
+	"store": "mongodb://192.168.1.216:27017/lykke_test_stellar",
+	"node": "https://horizon-testnet.stellar.org",
+	"assetId": "XLM_ASSET_ID",
+	"assetName": "Stellar",
+	"assetOpKey": "native",
+	"assetAccuracy": 7,
+	"wallet": {
+		"address": "GDZDCMYENMBJ7DHBGSJEU5GXFRSEXCGGWR4J23HVFBQDQ4WGIJLS7CRO"
+	}
+}

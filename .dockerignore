@@ -1,4 +1,5 @@
 core/node_modules
-monero/sign/node_modules
-monero/api/node_modules
 monero/xmr/build
+monero/node_modules
+stellar/node_modules
+ripple/node_modules
