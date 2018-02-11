@@ -3,7 +3,7 @@
 This repository includes all components needed to integrate 3 blockchains with API & SignService for each of them.
 Basic structure of repository:
 * `core` folder includes common to all blockchains functionality: configuration loading, logging, HTTP server, database abstractions and corresponding tests.
-* each of blockchain folders (`monero`, `ripple`, `stellar`) contain `api` & `sign` subfolders with respective functionality covering API & SignService services.
+* each of blockchain folders (`monero`, `ripple`, `stellar`) with chain-specific logic;
 * root folder also contains `Dockerfile` per each needed container (6 required + several optional like testnet for Monero).
 
 ## Overview
@@ -15,6 +15,8 @@ Core is responsible for setting up HTTP server and common among all blockchains 
 * `index.js` loads configuration, sets up logging, conntects to db and starts HTTP server with specified endpoints.
 * `index-api.js` provides default API endpoints, not specific to any blockchain. 
 * `index-sign.js` does the same for SignService.  
+* `tests.js` contains core tests: config loading, data validation, server lifecycle, etc.
+* `test-chain.js` contains standard test suite for all blockchains and is being called from each blockchain `tests.js`.  
 
 Booting process can be described in following steps:
 
@@ -25,7 +27,7 @@ Booting process can be described in following steps:
 
 ### Configuration
 
-This is contents of `test-config.json` which is used for tests of Monero API. All listed fields are required for API services. Other blockchains have very similar configuration files.
+Below is contents of `test-config.json` which is used for tests of Monero API. All listed fields are required for API services. Other blockchains have very similar configuration files.
 
 ```
 {
@@ -49,7 +51,8 @@ This is contents of `test-config.json` which is used for tests of Monero API. Al
 		"view": "516cfb79ce2265f4b407293ff7b1cb219f13fe10ee15d264f7772f98fe5f7208",
 		"address": "9zXxFrqsyjwGwFyWx3FQxM4Fe1XruVkNhP3FFHVuTBwtWU2dVoBaSbBFAF1GAwUgn82Xt1jqgQ8uFQffTAZnqe2L9ahmG7r"
 	}
-}```
+}
+```
 
 Configuration is loaded with retries as required from URL specified `SettingsUrl` ENV variable.
 
@@ -61,10 +64,13 @@ Configuration is loaded with retries as required from URL specified `SettingsUrl
 ### Database
 
 Mongodb is used for storage. DB URL is taken from `store` config preference. Standard db driver is used. `store.js` file contains db-related logic and corresponding abstractions as required. 2 collections are used: `transactions` for observed transactions, `accounts` for balances observing. Basic structure of records is following:
+
 **transactions**: 
+
 ```
 { 
 	"_id" : ObjectId("5a7f4d332d66cc54d35c6913"), 			// ID of transaction
+	"opid" : "OPERATION_ID", 								// operation id
 	"priority" : -1, 										// priority if any (extra parameter in POST /api/transactions/*)
 	"unlock" : -1, 											// unlock period if any (extra parameter in POST /api/transactions/*)
 	"operations" : [ 										// array of operations, that is payments or account creations (stellar-only)
@@ -88,6 +94,7 @@ Mongodb is used for storage. DB URL is taken from `store` config preference. Sta
 ```
 
 **accounts**:
+
 ```
 { 
 	"_id" : "FULL_ADDRESS_WITH_PAYMENT_ID", 				// full account address, with paymentId
@@ -98,14 +105,13 @@ Mongodb is used for storage. DB URL is taken from `store` config preference. Sta
 ```
 
 `paymentId` is a unique string which identifies account transactions within one wallet. Monero uses 8-byte random, Stellar uses 14-byte random, Ripple uses 32-bit Integer random.
-`paymentId` is included into `_id`, either implicitly (Monero, no special formatting required) or explicitly (by using simple format: "WALLETADDRESS
-|paymentId", where "|" is a separator which could be used in UI). Uniqueness of `paymentId` must be enforced externally through enforcing uniqueness of wallet address, that is `_id`. All cash-ins must be marked with corresponding `paymentId`:
-* For Monero it's enough to send a payment to address from `_id`, thus it doesn't contain any separators.
-* For Stellar & Ripple it's required to manually add a "memo" to transaction in user's wallet application. This memo must equal to a string following `|` in address' `_id`.
+`paymentId` is included into `_id`, either implicitly (Monero, no special formatting required) or explicitly (by using simple format: "WALLETADDRESS+paymentId", where "+" is a separator which could be used in UI). Uniqueness of `paymentId` must be enforced externally through enforcing uniqueness of wallet address, that is `_id`. All cash-ins must be marked with corresponding `paymentId`:
+* For Monero it's enough to send a payment to address equal to `_id`, thus it doesn't contain any separators.
+* For Stellar & Ripple it's required to manually add a "memo" (Stellar) or "tag" (Ripple) to transaction in user's wallet application. This memo/tag must equal to a string following `+` in address' `_id`.
 
 Following indexes are enforced:
-	* `hash` unique & sparse index is enforced on `transactions` collection to ensure one tx per hash being recorded.
-	* `operationId` unique & sparse index is enforced on `transactions` collection, for performance reasons.
+	* `hash` unique & sparse index is enforced on `transactions` collection to ensure one tx per hash is recorded.
+	* `opid` unique & sparse index is enforced on `transactions` collection, for performance reasons.
 	* `paymentId` unique index is enforced on `accounts` collection, for performance reasons.
 
 ### HTTP Server
@@ -116,15 +122,16 @@ Following indexes are enforced:
 ### Tests
 
 As a general rule, separate components are tested separately. `core` has tests for config loading, http server, db connectivity, etc. Each blockchain 
-has integration tests (API + SignService) at its folder. Ingegration test is mostly standard and can be found at `core/tests-chain.js`. Monero has separate test suite for native component. Wherever a file named `tests.js` is placed, tests can be run run with `npm test`.
+has integration tests (API + SignService) at its folder. Ingegration test is mostly standard and can be found at `core/tests-chain.js`. Monero has separate test suite for native component (`monero/xmr` folder). Wherever a file named `tests.js` is placed, tests can be run run with `npm test`.
 
 
 ### Code structure
 
 Each blockchain folder has following files:
-* `api.js` is an entry point for API service.
-* `sign.js` is an entry point for SignService.
+* `api.js` is a node.js entry point for API service.
+* `sign.js` is a node.js entry point for SignService.
 * `wallet.js` is a specific blockchain implementation including transactions construction, updates, validation, etc.
+* `tests.js` file contains tests.
 
 
 # Monero
@@ -247,6 +254,17 @@ Example SignService configuration:
 ```
 
 
-### Other chains configuration
+# Stellar & Ripple
 
-Other config files have the same format. The only differences are: asset configuration,  in asset / node configuration.
+These blockchains have very similar implementation: 
+1. They support tagging transactions with some specific data.
+2. They require so called *reserve* to be held on any account to be able to make outgoing transactions and other operations from it.
+
+Therefore, for reasons other than Monero, yet one wallet scheme is preferred for these blockchains as well. 
+
+Implementation for Stellar & Ripple is very similar to Monero implementation, with only one difference: Monero encodes `paymentId` into address, while Stellar & Ripple don't have such ability. For this reasons SignService returns addresses which look like `WALLETADDRESS+PAYMENTID`, where '+' is a separator.
+
+Other than address encoding there is no differences from Monero.
+
+
+
