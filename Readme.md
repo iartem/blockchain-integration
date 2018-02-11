@@ -229,7 +229,8 @@ Example API configuration:
 		"view": "805578055208faca04c977f77efc02db9eda17f78e0f17b7475df1bf30f5bc04",
 		"address": "9ycSSr8QT2GL9GcWDJGW3jaGXnoNcN2PFLXprcqneVebFn2kGNPiLq8cxJrufqhCUq12rndThWegqiNbVzTK5YBFMf4rc8w"
 	}
-}```
+}
+```
 
 
 Example SignService configuration:
