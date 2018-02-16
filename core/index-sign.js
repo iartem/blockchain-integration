@@ -27,7 +27,7 @@ let API_ROUTES = {
 			
 			let address = viewWallet.addressCreate(ctx.vals.paymentId || undefined);
 			ctx.body = {
-				privateKey: 'nope',
+				privateKey: process.env.PrivateKey,
 				publicAddress: address
 			};
 		},
