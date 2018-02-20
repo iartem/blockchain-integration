@@ -15,9 +15,9 @@ using namespace cryptonote;
 namespace tools {
 
 	XMRWallet::XMRWallet(bool testnet) : wallet2(testnet) {
-		// std::string log_path = "wallet.log";
-		// mlog_configure(log_path, false);
-		// mlog_set_log_level(0);
+		std::string log_path = "wallet.log";
+		mlog_configure(log_path, false);
+		mlog_set_log_level(0);
 	}
 
 	XMRKeys XMRWallet::createPaperWallet(const std::string &language) {
@@ -863,7 +863,7 @@ namespace tools {
 			txid = *reinterpret_cast<const crypto::hash*>(txid_data.data());
 		}
 
-		update_pool_state();
+		// update_pool_state();
 
 		// incoming transactions
 		if (in) {
