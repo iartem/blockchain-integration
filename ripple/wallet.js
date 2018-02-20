@@ -1,13 +1,14 @@
 const RippleAPI = require('ripple-lib').RippleAPI,
 	Wallet = require('../core/wallet.js'),
 	utils = require('../core/utils.js'),
+	codec = require('ripple-address-codec'),
 	Big = require('big.js'),
 	crypto = require('crypto'),
 	SEPARATOR = '+',
 	PRECISION = 1e6,
-	PRECISION_ASSET = 1e16,
+	// PRECISION_ASSET = 1e16,
 	DECIMALS = 6,
-	DECIMALS_ASSET = 12,
+	// DECIMALS_ASSET = 12,
 	RESERVE = 20;
 
 class XRPWallet extends Wallet {
@@ -53,7 +54,7 @@ class XRPWallet extends Wallet {
 				} else {
 					this.height = await this.api.getLedgerVersion() - 100;
 				}
-			}, attempt => attempt >= 3 ? -1 : Math.pow(3, attempt + 1))
+			}, attempt => attempt >= 3 ? -1 : Math.pow(3, attempt + 1));
 			// try {
 			// } catch (e) {
 			// 	if (e.message === 'actNotFound') {
@@ -188,10 +189,18 @@ class XRPWallet extends Wallet {
 		if (str) {
 			let [address, memo] = str.split(SEPARATOR);
 			if (address) {
-				return {
-					address: address,
-					paymentId: memo
-				};
+				try {
+					if (codec.isValidAddress(address) && (!memo || (('' + parseInt(memo)) === ('' + memo)))) {
+						return {
+							address: address,
+							paymentId: memo
+						};
+					} else {
+						return undefined;
+					}
+				} catch (e) {
+					return undefined;
+				}
 			}
 		}
 	}

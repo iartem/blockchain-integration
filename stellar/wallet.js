@@ -1,6 +1,5 @@
 const StellarSdk = require('stellar-sdk'),
 	Wallet = require('../core/wallet.js'),
-	Transport = require('../core/transport.js'),
 	utils = require('../core/utils.js'),
 	Big = require('big.js'),
 	crypto = require('crypto'),
@@ -30,7 +29,7 @@ class XLMWallet extends Wallet {
 	 * @throws {Wallet.Error} [in promise] if failed to get balance
 	 * @return {Promise} resolves to cuurent balance (String) or error if something is wrong
 	 */
-	initViewWallet(account, notUsed) {
+	initViewWallet(account) {
 		if (!this.server) {
 			throw new Wallet.Error(Wallet.Errors.EXCEPTION, 'No node in conig');
 		} 
@@ -76,7 +75,7 @@ class XLMWallet extends Wallet {
 
 						this.backoff(async () => {
 							let tx = await payment.transaction(), op;
-					// console.log(tx);
+							// console.log(tx);
 
 							if (incoming) {
 								op = info.addPayment(payment.source_account, this.account, payment.asset_type, amount, undefined, tx.memo);
@@ -129,7 +128,7 @@ class XLMWallet extends Wallet {
 			this.status = Wallet.Status.Ready;
 			return Promise.resolve();
 		} catch (e) {
-			this.log.error(e, `Error in sign wallet initialization`);
+			this.log.error(e, 'Error in sign wallet initialization');
 			return Promise.reject(new Wallet.Error(Wallet.Errors.EXCEPTION, e.message || e.code || 'Cannot init sign wallet'));
 		}
 	}
@@ -144,7 +143,7 @@ class XLMWallet extends Wallet {
 			this.status = Wallet.Status.Initial;
 			return utils.wait(2000);
 		} catch (e) {
-			this.log.error(e, `Error in wallet close`);
+			this.log.error(e, 'Error in wallet close');
 			throw new Wallet.Error(Wallet.Errors.EXCEPTION, e.message || e.code || 'Cannot close wallet');
 		}
 	}
@@ -174,10 +173,18 @@ class XLMWallet extends Wallet {
 		if (str) {
 			let [address, memo] = str.split(SEPARATOR);
 			if (address) {
-				return {
-					address: address,
-					paymentId: memo
-				};
+				try {
+					if (StellarSdk.StrKey.isValidEd25519PublicKey(address) && (!memo || memo.length === 28)) {
+						return {
+							address: address,
+							paymentId: memo
+						};
+					} else {
+						return undefined;
+					}
+				} catch (e) {
+					return undefined;
+				}
 			}
 		}
 	}
@@ -298,7 +305,7 @@ class XLMWallet extends Wallet {
 			this.log.debug(`tx signed in ${this.account}`);
 			return {signed: transaction.toEnvelope().toXDR().toString('base64')};
 		} catch (e) {
-			this.log.error(e, `Error in sign tx`);
+			this.log.error(e, 'Error in sign tx');
 			return {error: new Wallet.Error(Wallet.Errors.EXCEPTION, e.message || e.code || 'Cannot sign transaction')};
 		}
 
@@ -338,7 +345,7 @@ class XLMWallet extends Wallet {
 		try {
 			return this.xmr.transactions(txid, incoming, outgoing);
 		} catch (e) {
-			this.log.error(e, `Error in tx listing`);
+			this.log.error(e, 'Error in tx listing');
 			throw new Wallet.Error(Wallet.Errors.EXCEPTION, e.message);
 		}
 	}
@@ -347,7 +354,7 @@ class XLMWallet extends Wallet {
 	 * Just create random wallet
 	 * @return object with wallet data, should never fail
 	 */
-	createPaperWallet (amount) {
+	createPaperWallet () {
 		let keypair = StellarSdk.Keypair.random(),
 			ret = {
 				address: keypair.publicKey(),
