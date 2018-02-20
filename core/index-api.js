@@ -414,7 +414,7 @@ let API_ROUTES = {
 		},
 
 		/**
-		 * Returns single assetId - not applicable for Monero.
+		 * Returns single assetId - not applicable.
 		 * @return {200 Object}
 		 */
 		'/api/assets/:assetId': ctx => {
@@ -439,15 +439,19 @@ let API_ROUTES = {
 			ctx.validateQuery('take').required('is required').toInt('must be a number').gt(0).lt(1000);
 			ctx.validateQuery('continuation').optional().isString('must be a string');
 
-			ctx.body = {
-				continuation: null,
-				items: [{
-					assetId: CFG.assetId,
-					address: '',
-					name: CFG.assetName,
-					accuracy: CFG.assetAccuracy
-				}]
-			};
+			if (continuation) {
+				throw new ValidationError('continuation', 'is invalid');
+			} else {
+				ctx.body = {
+					continuation: null,
+					items: [{
+						assetId: CFG.assetId,
+						address: '',
+						name: CFG.assetName,
+						accuracy: CFG.assetAccuracy
+					}]
+				};
+			}
 		},
 
 		/**
@@ -830,7 +834,7 @@ let API_ROUTES = {
 
 	PUT: {
 		/**
-		 * Transaction replacements are not supported in Monero
+		 * Transaction replacements are not supported
 		 * @return {501}
 		 */
 		'/api/transactions': ctx => {
