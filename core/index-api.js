@@ -206,7 +206,7 @@ let processTx = async (ctx, tx) => {
 	}
 
 	let json = tx.toJSON();
-	json.observing = true;
+	// json.observing = true;
 
 	// by default we create new object, but according to requirements it's possible to reuse the same operationId
 	// thus we clear-up existing object and overwrite it with newly constructed one, resetting hash
@@ -686,7 +686,7 @@ let API_ROUTES = {
 					}
 
 					// mark tx as completed right away
-					await ctx.store.tx(tx._id, {hash: '' + Date.now(), status: Wallet.Tx.Status.Completed, timestamp: Date.now()}, false);
+					await ctx.store.tx(tx._id, {hash: '' + Date.now(), status: Wallet.Tx.Status.Completed, timestamp: Date.now(), observing: true}, false);
 					log.info(`Successfully completed tx ${ctx.vals.operationId}`);
 				} else {
 					// common cash-out
@@ -699,7 +699,7 @@ let API_ROUTES = {
 
 					if (result.hash) {
 						// got a hash = tx has been submitted to blockchain
-						let update = {hash: result.hash, status: Wallet.Tx.Status.Sent};
+						let update = {hash: result.hash, status: Wallet.Tx.Status.Sent, observing: true};
 						update.timestamp = result.timestamp || Date.now();
 						if (result.page) {
 							update.page = result.page;
@@ -721,7 +721,8 @@ let API_ROUTES = {
 							await ctx.store.tx(tx._id, {
 								error: result.error.type === Wallet.Errors.NOT_ENOUGH_FUNDS ? 'notEnoughBalance' : 'amountIsTooSmall', 
 								status: Wallet.Tx.Status.Failed, 
-								timestamp: Date.now()
+								timestamp: Date.now(), 
+								observing: true
 							}, false);
 
 							ctx.body = {
@@ -729,7 +730,7 @@ let API_ROUTES = {
 							};
 						} else {
 							// all other errors
-							await ctx.store.tx(tx._id, {error: result.error.message, status: Wallet.Tx.Status.Failed, timestamp: Date.now()}, false);
+							await ctx.store.tx(tx._id, {error: result.error.message, status: Wallet.Tx.Status.Failed, timestamp: Date.now(), observing: true}, false);
 							throw result.error;
 						}
 					} else if (result.status) {
