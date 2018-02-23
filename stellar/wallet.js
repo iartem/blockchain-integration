@@ -13,6 +13,7 @@ class XLMWallet extends Wallet {
 		super(testnet, node, logger, onTx, refreshEach);
 		if (testnet) {
 			StellarSdk.Network.useTestNetwork();
+			StellarSdk.Config.setAllowHttp(true);
 		}
 		if (node) {
 			this.server = new StellarSdk.Server(node);

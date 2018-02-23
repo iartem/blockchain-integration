@@ -263,6 +263,10 @@ let findTx = async (ctx) => {
 			hash: tx.hash,
 			error: tx.error || undefined
 		};
+		
+		if (tx.error) {
+			ctx.body.errorCode = 'unknown';
+		}
 	} else {
 		log.warn(`Didn't find tx ${ctx.vals.operationId}`);
 		log.debug(`Found ${tx}`);
@@ -439,7 +443,7 @@ let API_ROUTES = {
 			ctx.validateQuery('take').required('is required').toInt('must be a number').gt(0).lt(1000);
 			ctx.validateQuery('continuation').optional().isString('must be a string');
 
-			if (continuation) {
+			if (ctx.vals.continuation) {
 				throw new ValidationError('continuation', 'is invalid');
 			} else {
 				ctx.body = {
@@ -605,6 +609,11 @@ let API_ROUTES = {
 			ctx.validateParam('address').required('is required').isValidChainAddress();
 
 			let addr = SRV.wallet.addressDecode(ctx.params.address);
+
+			if (addr.address !== SRV.wallet.address()) {
+				throw new ValidationError('address', 'Only wallet address & subaddresses supported');
+			}
+
 			let set = await ctx.store.accountCreate({_id: ctx.params.address, paymentId: addr.paymentId, balance: 0});
 
 			if (set) {
@@ -736,6 +745,7 @@ let API_ROUTES = {
 					} else if (result.status) {
 						ctx.status = 499;
 						ctx.body = {
+							errorCode: 'unknown',
 							errorMessage: result.error || 'Please retry transaction later'
 						};
 					} else {
@@ -767,7 +777,7 @@ let API_ROUTES = {
 		 * @return {200}	always
 		 */
 		'/api/transactions/history/to/:address/observation': ctx => {
-			ctx.status = 200
+			ctx.status = 200;
 		},
 	},
 
@@ -829,7 +839,7 @@ let API_ROUTES = {
 		 * @return {200}	always
 		 */
 		'/api/transactions/history/to/:address/observation': ctx => {
-			ctx.status = 200
+			ctx.status = 200;
 		},
 	},
 

@@ -66,14 +66,19 @@ module.exports = label => {
 
 	function logit(level, error, string) {
 		if (!(error instanceof Error)) {
-			string = error;
-			error = undefined;
+			if (error && string) {
+				logger[level](`${string} / error ${error.message || error.code} obj ${JSON.stringify(error)}}`);
+				return;
+			} else {
+				string = error;
+				error = undefined;
+			}
 		}
 
 		if (error) {
 			logger[level](`${string} / error ${error.message || error.code} stack ${JSON.stringify(error.stack)}`);
 		} else {
-			logger[level](string);
+			logger[level](typeof string === 'object' ? JSON.stringify(string) : string);
 		}
 	}
 

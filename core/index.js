@@ -88,6 +88,7 @@ const index = (settings, routes={}) => {
 					if (err.name === 'ValidationError') {
 						if (err.bouncer.key) {
 							ctx.body = {
+								errorCode: 'unknown',
 								errorMessage: 'Validation Error',
 								modelErrors: {
 									[err.bouncer.key]: [err.bouncer.message]
@@ -103,6 +104,7 @@ const index = (settings, routes={}) => {
 					} else if (err.name === 'WalletError') {
 						L.warn(err, `WalletError in wrapper middleware`);
 						ctx.body = {
+							errorCode: 'unknown',
 							errorMessage: 'Wallet error: ' + (err.message || 'Unknown error'),
 							trace: err.stack
 						};
