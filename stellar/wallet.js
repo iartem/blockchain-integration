@@ -3,7 +3,6 @@ const StellarSdk = require('stellar-sdk'),
 	utils = require('../core/utils.js'),
 	Big = require('big.js'),
 	crypto = require('crypto'),
-	SEPARATOR = '+',	// separator for user addresses
 	PRECISION = 1e7,
 	DECIMALS = 7,
 	RESERVE = 1;
@@ -170,9 +169,9 @@ class XLMWallet extends Wallet {
 		return this.account;
 	}
 
-	addressDecode(str) {
+	static addressDecode(str) {
 		if (str) {
-			let [address, memo] = str.split(SEPARATOR);
+			let [address, memo] = str.split(XLMWallet.SEPARATOR);
 			if (address) {
 				try {
 					if (StellarSdk.StrKey.isValidEd25519PublicKey(address) && (!memo || memo.length === 28)) {
@@ -190,15 +189,15 @@ class XLMWallet extends Wallet {
 		}
 	}
 
-	addressEncode(address, paymentId) {
+	static addressEncode(address, paymentId) {
 		if (paymentId) {
-			return address + SEPARATOR + paymentId;
+			return address + XLMWallet.SEPARATOR + paymentId;
 		}
 		return address;
 	}
 
 	addressCreate (paymentId) {
-		return this.addressEncode(this.account, paymentId || crypto.randomBytes(14).toString('hex'));
+		return XLMWallet.addressEncode(this.account, paymentId || crypto.randomBytes(14).toString('hex'));
 	}
 
 	async createUnsignedTransaction (tx) {
@@ -355,7 +354,7 @@ class XLMWallet extends Wallet {
 	 * Just create random wallet
 	 * @return object with wallet data, should never fail
 	 */
-	createPaperWallet () {
+	static createPaperWallet () {
 		let keypair = StellarSdk.Keypair.random(),
 			ret = {
 				address: keypair.publicKey(),
@@ -383,6 +382,8 @@ XLMWallet.Error = Wallet.Error;
 XLMWallet.Errors = Wallet.Errors;
 XLMWallet.Account = Wallet.Account;
 XLMWallet.Tx = Wallet.Tx;
+XLMWallet.SEPARATOR = '+';
+XLMWallet.EXTENSION_NAME = 'memo';
 
 
 module.exports = XLMWallet;

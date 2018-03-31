@@ -280,7 +280,7 @@ describe('core api server', () => {
 					this.status = Wallet.Status.Ready;
 				}
 				address() { return DATA.A0; }
-				addressDecode(str) { 
+				static addressDecode(str) { 
 					if (str.length !== 10) {
 						return;
 					} 
@@ -354,13 +354,14 @@ describe('core api server', () => {
 
 			await request.get('/api/isalive')
 				.expect('Content-Type', 'application/json; charset=utf-8')
-				.expect(200, {name: defaults.serviceName, version: defaults.version, env: null, isDebug: defaults.testnet});
+				.expect(200, {name: defaults.serviceName, version: defaults.version, env: null, isDebug: defaults.testnet, contractVersion: '1.1.0'});
 		});
 
 		it('should return correct response on /api/capabilities', async () => {
 			await request.get('/api/capabilities')
 				.expect('Content-Type', 'application/json; charset=utf-8')
-				.expect(200, {isTransactionsRebuildingSupported: false, areManyInputsSupported: true, areManyOutputsSupported: true});
+				.expect(200, {isTransactionsRebuildingSupported: false, areManyInputsSupported: true, 
+					areManyOutputsSupported: true, isTestingTransfersSupported: true, isPublicAddressExtensionRequired: true});
 		});
 	});
 

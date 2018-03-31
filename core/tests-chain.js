@@ -35,7 +35,7 @@
  * 		7. Check balances & history: balances must not change, history must contain all transactions from above.
  */
 module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
-	let API, SIGN;
+	let API, SIGN, db;
 
 	console.log(apiConf, apiPath, signConf, signPath, D);
 
@@ -47,7 +47,7 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 		
 		describe('init', () => {
 			it('should clean db', async () => {
-				let client, db;
+				let client;
 				try {
 					let cfg = require(apiConf), mongodb = require('mongodb');
 					client = await mongodb.MongoClient.connect(cfg.store);
@@ -61,11 +61,6 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 				}
 			});
 			it('should start api', () => {
-				let cfg = require(apiConf);
-				cfg.wallet.address = D.W.address;
-				cfg.wallet.view = D.W.view;
-				require('fs').writeFileSync(apiConf, JSON.stringify(cfg, null, '\t'));
-
 				process.env.SettingsUrl = apiConf;
 				return require(apiPath).then(srv => {
 					API = srv;
@@ -73,18 +68,22 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 				});
 			}).timeout(10000);
 			it('should start sign', () => {
-				let cfg = require(signConf);
-				cfg.wallet.address = D.W.address;
-				cfg.wallet.view = D.W.view;
-				require('fs').writeFileSync(signConf, JSON.stringify(cfg, null, '\t'));
-
 				process.env.SettingsUrl = signConf;
 				return require(signPath).then(srv => {
 					SIGN = srv;
 					SIGN.r = supertest(SIGN.server);
 				});
 			}).timeout(10000);
-			it('W should be in ready state & have balance of 10 coins', () => {
+			it('should fill initial balances', () => {
+				return BLOCKCHAIN.fill(API, SIGN);
+			}).timeout(60000 * 20);
+			it('should initialize API', () => {
+				return API.r.post('/api/initialize').send({WalletAddress: D.W.address, WalletViewKey: D.W.view}).expect(200);
+			}).timeout(10000);
+			it('should initialize SIGN', () => {
+				return SIGN.r.post('/api/initialize').send({WalletAddress: D.W.address, WalletViewKey: D.W.view, WalletPrivateKey: D.W.seed}).expect(200);
+			}).timeout(10000);
+			it('W should be in ready state & have balance of 10/100 coins', () => {
 				return API.utils.waitToResolve(async () => {
 					// will return 400 if wallet is not ready yet
 					await API.r.get('/api/balances?take=1').expect(200);
@@ -95,7 +94,7 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 						throw new Error('Balance is not valid yet');
 					}
 				}, 6000, 10);
-			}).timeout(5 * 60000);
+			}).timeout(60000 * 20);
 		});
 
 		describe('setup', () => {
@@ -123,12 +122,52 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 			});
 		});
 
+		if (D.BOUNCE) {
+			describe('bounce', () => {
+				it('should send payment from WC to W (to bounce)', async () => {
+					let res = await API.r.post('/api/testing/transfers').send({
+						fromAddress: D.WC.address,
+						fromPrivateKey: D.WC.seed,
+						toAddress: D.W.address,
+						amount: D.bounce_cashin,
+						assetId: API.CFG.assetId
+					}).expect(200);
+
+					console.log('WС => W to bounce', res.body);
+
+					D.BOUNCED = res.body[0].hash;
+
+				}).timeout(50000);
+
+				it('should have tx to bounce in history', async () => {
+					let res = await API.r.get(`/api/transactions/history/to/${D.W.address}?take=10&bounces=true`).expect(200),
+						bounced = res.body.filter(tx => tx.bounced === false)[0];
+					console.log(res.body);
+					should.exist(bounced);
+					bounced.fromAddress.should.equal(D.WC.address);
+					bounced.toAddress.should.equal(D.W.address);
+					bounced.amount.should.equal('' + D.bounce_cashin);
+					bounced.operationId.should.equal('');
+					bounced.bounced.should.equal(false);
+					should.not.exist(bounced.bounce);
+				}).timeout(5000);
+			});
+		}
+
 		describe('cash-in', () => {
 			it('should cash-in alice (AA) for 8 coins', async () => {
-				let err = await BLOCKCHAIN.transfer(D.WA, D.AA, D.AA_cashin);
-				should.not.exist(err);
+				let res = await API.r.post('/api/testing/transfers').send({
+					fromAddress: D.WA.address,
+					fromPrivateKey: D.WA.seed,
+					toAddress: D.AA,
+					amount: D.AA_cashin,
+					assetId: API.CFG.assetId
+				}).expect(200);
+
+				console.log('WA => AA 8', res.body);
+
 				// let err = await retriableTx({}, API, SIGN, D.W.spend, 2);
-			}).timeout(30000);
+			}).timeout(60000 * 20);
 
 			it('should confirm 8-coin tx from alice', () => {
 				return API.utils.waitToResolve(async () => {
@@ -158,25 +197,35 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 			}).timeout(10000);
 
 			it('should cash-in bob (AB) for 5 coins', async () => {
-				let err = await BLOCKCHAIN.transfer(D.WB, D.AB, D.AB_cashin, false);
-				should.not.exist(err);
-			}).timeout(15000);
+				let res = await API.r.post('/api/testing/transfers').send({
+					fromAddress: D.WB.address,
+					fromPrivateKey: D.WB.seed,
+					toAddress: D.AB,
+					amount: D.AB_cashin,
+					assetId: API.CFG.assetId
+				}).expect(200);
 
-			it('should start api', () => {
+				console.log('WA => AB 5', res.body);
+			}).timeout(60000 * 20);
+
+			it('should start api', async () => {
 				process.env.SettingsUrl = apiConf;
-				return require(apiPath).reset().then(srv => {
+				await require(apiPath).reset().then(srv => {
 					API = srv;
 					API.r = supertest(API.server);
 				});
-			}).timeout(10000);
 
-			it('should start sign', () => {
+				await API.r.post('/api/initialize').send({WalletAddress: D.W.address, WalletViewKey: D.W.view}).expect(200);
+			}).timeout(30000);
+
+			it('should start sign', async () => {
 				process.env.SettingsUrl = signConf;
-				return require(signPath).reset().then(srv => {
+				await require(signPath).reset().then(srv => {
 					SIGN = srv;
 					SIGN.r = supertest(SIGN.server);
 				});
-			}).timeout(10000);
+				await SIGN.r.post('/api/initialize').send({WalletAddress: D.W.address, WalletViewKey: D.W.view, WalletPrivateKey: D.W.seed}).expect(200);
+			}).timeout(30000);
 
 			it('should have 1 cash-in for both: alice & bob', () => {
 				return API.utils.waitToResolve(async () => {
@@ -354,20 +403,23 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 				await BLOCKCHAIN.wait(tx.hash);
 			}).timeout(10 * 60000);
 
-			it('should start api', () => {
+			it('should start api', async () => {
 				process.env.SettingsUrl = apiConf;
-				return require(apiPath).reset().then(srv => {
+				await require(apiPath).reset().then(srv => {
 					API = srv;
 					API.r = supertest(API.server);
 				});
+
+				await API.r.post('/api/initialize').send({WalletAddress: D.W.address, WalletViewKey: D.W.view}).expect(200);
 			}).timeout(30000);
 
-			it('should start sign', () => {
+			it('should start sign', async () => {
 				process.env.SettingsUrl = signConf;
-				return require(signPath).reset().then(srv => {
+				await require(signPath).reset().then(srv => {
 					SIGN = srv;
 					SIGN.r = supertest(SIGN.server);
 				});
+				await SIGN.r.post('/api/initialize').send({WalletAddress: D.W.address, WalletViewKey: D.W.view, WalletPrivateKey: D.W.seed}).expect(200);
 			}).timeout(30000);
 
 			it('should have cashout to WA as completed', () => {
@@ -389,6 +441,34 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 				res.body[0].amount.should.equal('' + D.WA_cashout_separate);
 				res.body[0].operationId.should.equal('cashoutWA');
 			});
+
+			if (D.BOUNCE) {
+				let bounceOpId;
+				it('should have bounced=true in history', async () => {
+					let res = await API.r.get(`/api/transactions/history/to/${D.W.address}?take=10&bounces=true`).expect(200),
+						bounced = res.body.filter(tx => !!tx.bounced)[0];
+					bounceOpId = bounced.bounced;
+					should.exist(bounced);
+					bounced.fromAddress.should.equal(D.WC.address);
+					bounced.toAddress.should.equal(D.W.address);
+					bounced.amount.should.equal('' + D.bounce_cashin);
+					bounced.operationId.should.equal('');
+					should.not.exist(bounced.bounce);
+				}).timeout(5000);
+
+				it('should have bounce tx in history', async () => {
+					let res = await API.r.get(`/api/transactions/history/from/${D.W.address}?take=10&bounces=true`).expect(200),
+						bounce = res.body.filter(tx => !!tx.bounce)[0];
+					
+					should.exist(bounce);
+					bounce.fromAddress.should.equal(D.W.address);
+					bounce.toAddress.should.equal(D.WC.address);
+					// (parseInt(bounce.amount) + parseInt(bounce.fee)).should.equal('' + D.bounce_cashin);
+					bounce.operationId.should.equal('');
+					bounceOpId.should.equal(bounced.bounce);
+					should.not.exist(bounced.bounced);
+				}).timeout(5000);
+			}
 
 			if (D.MULTI_OUTS) {
 				it('should cash-out .3 coins to WA, WB, WC', async () => {

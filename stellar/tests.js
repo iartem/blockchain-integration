@@ -151,11 +151,11 @@ describe('stellar chain', () => {
 			let tx = new Wallet.Tx('someid', 1, 0);
 			if (Array.isArray(amount)) {
 				address.forEach((addr, i) => {
-					let comps = view.addressDecode(addr);
+					let comps = Wallet.addressDecode(addr);
 					tx.addPayment(from.address, comps.address, CFG.assetOpKey, amount[i], undefined, comps.paymentId);
 				});
 			} else {
-				let comps = view.addressDecode(address);
+				let comps = Wallet.addressDecode(address);
 				tx.addPayment(from.address, comps.address, CFG.assetOpKey, amount, undefined, comps.paymentId);
 			}
 

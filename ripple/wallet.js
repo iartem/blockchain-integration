@@ -1,10 +1,10 @@
 const RippleAPI = require('ripple-lib').RippleAPI,
 	Wallet = require('../core/wallet.js'),
 	utils = require('../core/utils.js'),
+	Transport = require('../core/transport.js'),
 	codec = require('ripple-address-codec'),
 	Big = require('big.js'),
 	crypto = require('crypto'),
-	SEPARATOR = '+',
 	PRECISION = 1e6,
 	// PRECISION_ASSET = 1e16,
 	DECIMALS = 6,
@@ -18,7 +18,9 @@ class XRPWallet extends Wallet {
 		// hash of transactions being watched (statuses are updated on each refresh, callback is called each status update)
 		this.pending = {};
 		(pending || []).forEach(tx => {
-			this.pending[tx.hash] = tx.status;
+			if (tx.hash) {
+				this.pending[tx.hash] = tx.status;
+			}
 		});
 
 		// last known (from transactions in db) validated ledger version
@@ -49,6 +51,7 @@ class XRPWallet extends Wallet {
 				this.balance = {
 					native: parseInt(Big(info.xrpBalance).times(PRECISION).toFixed(0))
 				};
+				this.sequence = info.sequence;
 				if (!this.height) {
 					this.height = info.previousAffectingTransactionLedgerVersion - 10;
 				} else {
@@ -105,6 +108,9 @@ class XRPWallet extends Wallet {
 			}
 			// this.height = await this.api.getLedgerVersion();
 
+			let info = await this.api.getAccountInfo(this.account);
+			this.sequence = info.sequence;
+
 			await this.balances();
 
 		} catch (e) {
@@ -114,6 +120,7 @@ class XRPWallet extends Wallet {
 			this.refreshing = false;
 			this.log.info(`Refreshing done (${this.height}), ${Object.keys(this.pending).length} pending tx.`);
 			Object.keys(this.pending).forEach(hash => {
+				this.log.info(`_onTx'ing tx ${hash}`);
 				this._onTx(hash);
 			});
 		}
@@ -128,11 +135,11 @@ class XRPWallet extends Wallet {
 	 */
 	initSignWallet (address, seed) {
 		try {
-			this.log.info(`Loading sign wallet for address ${address}`);
 			this.api = new RippleAPI();
 			this.account = address;
 			this.secret = seed;
 			this.status = Wallet.Status.Ready;
+			this.log.info(`Loaded sign wallet for address ${address}`);
 			return Promise.resolve();
 		} catch (e) {
 			this.log.error(e, 'Error in sign wallet initialization');
@@ -185,9 +192,9 @@ class XRPWallet extends Wallet {
 		return this.account;
 	}
 
-	addressDecode(str) {
+	static addressDecode(str) {
 		if (str) {
-			let [address, memo] = str.split(SEPARATOR);
+			let [address, memo] = str.split(XRPWallet.SEPARATOR);
 			if (address) {
 				try {
 					if (codec.isValidAddress(address) && (!memo || (('' + parseInt(memo)) === ('' + memo)))) {
@@ -205,18 +212,43 @@ class XRPWallet extends Wallet {
 		}
 	}
 
-	addressEncode(address, paymentId) {
+	static addressEncode(address, paymentId) {
 		if (paymentId) {
-			return address + SEPARATOR + paymentId;
+			return address + XRPWallet.SEPARATOR + paymentId;
 		}
 		return address;
 	}
 
 	addressCreate (paymentId) {
-		return this.addressEncode(this.account, paymentId || crypto.randomBytes(4).readUInt32BE(0, true));
+		return XRPWallet.addressEncode(this.account, paymentId || crypto.randomBytes(4).readUInt32BE(0, true));
 	}
 
-	async createUnsignedTransaction (tx) {
+	async createUnsignedTransaction (tx, bounces) {
+		if (!this.api) {
+			return {error: new Wallet.Error(Wallet.Errors.EXCEPTION, 'no connection')};
+		}
+
+		let data = await this.prepareTx(tx);
+		if (data.error) {
+			return data;
+		}
+		if (bounces && bounces.length) {
+			let results = await utils.promiseSerial(bounces.map(b => () => this.prepareTx(b))),
+				errors = results.filter(r => !!r.error);
+			if (errors.length) {
+				return {
+					error: `Error when creating bounce tx: ${errors.join(', ')}`
+				};
+			}
+
+			return {
+				unsigned: new Buffer(JSON.stringify([data.unsigned].concat(results.map(r => r.unsigned)))).toString('base64')
+			};
+		}
+		return data;
+	}
+	
+	async prepareTx (tx) {
 		if (!(tx instanceof Wallet.Tx)) {
 			return {error: new Wallet.Error(Wallet.Errors.VALIDATION, 'createUnsignedTransaction argument must be Tx instance')};
 		}
@@ -270,7 +302,24 @@ class XRPWallet extends Wallet {
 							currency: op.asset
 						},
 					},
-				};
+				},
+				instructions = {maxLedgerVersion: height + 4, sequence: this.sequence++};
+
+			if (tx.bounce) {
+				let feeString = await this.api.getFee(),
+					fee = Big(feeString),
+					was = Big(op.amount).div(PRECISION),
+					bec = was.minus(fee);
+				
+				this.log.debug(`Decreasing amount of ${tx._id} for a fee: ${was} - ${fee} = ${bec}`);
+
+				// spec.allowPartialPayment = true;
+				spec.source.maxAmount.value = bec.toFixed(DECIMALS);
+				spec.destination.amount.value = bec.toFixed(DECIMALS);
+				instructions.fee = fee.toFixed(DECIMALS);
+				op.amount = parseInt(bec.times(PRECISION).toFixed(0));
+				op.fee = parseInt(fee.times(PRECISION).toFixed(0));
+			}
 
 			if (op.sourcePaymentId) {
 				spec.source.tag = parseInt(op.sourcePaymentId);
@@ -282,11 +331,11 @@ class XRPWallet extends Wallet {
 
 			this.log.debug(`Spec for tx ${tx._id}: ${JSON.stringify(spec)}`);
 
-			let data = await this.api.preparePayment(this.account, spec, {maxLedgerVersion: height + 4});
+			let data = await this.api.preparePayment(this.account, spec, instructions);
 			
 			this.log.debug(`preparePayment for ${tx._id}: ${JSON.stringify(data)}`);
 
-			return {unsigned: new Buffer(data.txJSON).toString('base64')};
+			return {unsigned: tx._id + XRPWallet.ENCODING_SEPARATOR + new Buffer(data.txJSON).toString('base64')};
 		} catch (e) {
 			this.log.error(e, 'Error when creating transaction');
 			return {error: new Wallet.Error(Wallet.Errors.EXCEPTION, e.message || e.code || 'Cannot create transaction')};
@@ -303,14 +352,31 @@ class XRPWallet extends Wallet {
 		}
 
 		try {
+			if (data.indexOf(XRPWallet.ENCODING_SEPARATOR) === -1) {
+				try {
+					let txs = JSON.parse(Buffer.from(data, 'base64').toString()),
+						results = txs.map(tx => this.signTransaction(tx));
+
+					return {signed: new Buffer(JSON.stringify(results.map(r => r.signed))).toString('base64')};
+				} catch (e) {
+					this.log.error(e, 'Error when signing transaction ' + data);
+					return {error: new Wallet.Error(Wallet.Errors.EXCEPTION, e.message || e.code || 'Invalid data format - no separator')};
+				}
+			}
+
 			this.log.debug(`signing tx in ${this.account}`);
 
-			data = Buffer.from(data, 'base64').toString();
+			let [_id, unsignedTransaction] = data.split(XRPWallet.ENCODING_SEPARATOR);
+			if (!_id || !unsignedTransaction) {
+				this.log.error('Invalid data format in sign tx: ' + data);
+				return {error: new Wallet.Error(Wallet.Errors.EXCEPTION, 'Invalid data format')};
+			}
+			data = Buffer.from(unsignedTransaction, 'base64').toString();
 
 			let signed = this.api.sign(data, this.secret);
 
 			this.log.debug(`tx signed in ${this.account}`);
-			return {signed: signed.id + SEPARATOR + signed.signedTransaction};
+			return {signed: _id + XRPWallet.ENCODING_SEPARATOR + signed.id + XRPWallet.ENCODING_SEPARATOR + signed.signedTransaction};
 		} catch (e) {
 			this.log.error(e, 'Error in sign tx');
 			return {error: new Wallet.Error(Wallet.Errors.EXCEPTION, e.message || e.code || 'Cannot sign transaction')};
@@ -327,11 +393,25 @@ class XRPWallet extends Wallet {
 			return {error: new Wallet.Error(Wallet.Errors.EXCEPTION, 'no connection')};
 		}
 
+		// with bounces
+		if (data.indexOf(XRPWallet.ENCODING_SEPARATOR) === -1) {
+			try {
+				let array = JSON.parse(Buffer.from(data, 'base64').toString());
+				if (array.length) {
+					return await utils.promiseSerial(array.map(str => () => this.submitSignedTransaction(str)));
+				}
+			} catch (e) {
+				this.log.error(e, 'Error when submitting transaction ' + data);
+				return {error: new Wallet.Error(Wallet.Errors.EXCEPTION, e.message || e.code || 'Invalid data format - no separator')};
+			}
+		}
+
 		try {
 			this.log.debug(`submitting tx in ${this.account}`);
 
-			let [id, signedTransaction] = data.split(SEPARATOR);
-			if (!id || !signedTransaction) {
+			let [_id, id, signedTransaction] = data.split(XRPWallet.ENCODING_SEPARATOR);
+			if (!_id || !id || !signedTransaction) {
+				this.log.error('Invalid format of signed transaction data: ' + data);
 				return {error: new Wallet.Error(Wallet.Errors.EXCEPTION, 'invalid format of signed transaction data')};
 			}
 
@@ -339,18 +419,18 @@ class XRPWallet extends Wallet {
 
 			this.log.debug(`tx submission returned ${JSON.stringify(result)}`);
 
-			if (result.resultCode === 'tesSUCCESS') {
+			if (result.resultCode === 'tesSUCCESS' || result.resultCode === 'terQUEUED') {
 				// this.log.debug(`tx right after submission ${JSON.stringify(await this.api.getTransaction(id))}`);
-				return {hash: id};
+				return {_id: _id, hash: id};
 			// } else if (result.resultCode.indexOf('tel') === 0 || result.resultCode.indexOf('tem') === 0) {
 			} else if (result.resultCode === 'tecNO_DST') {
-				return {error: new Wallet.Error(Wallet.Errors.NOT_ENOUGH_AMOUNT)};
+				return {_id: _id, error: new Wallet.Error(Wallet.Errors.NOT_ENOUGH_AMOUNT)};
 			} else if (result.resultCode === 'tec_UNFUNDED') {
-				return {error: new Wallet.Error(Wallet.Errors.NOT_ENOUGH_FUNDS)};
-			} else if (result.resultCode === 'tefPAST_SEQ') {
-				return {error: new Wallet.Error(Wallet.Errors.NOT_ENOUGH_FUNDS)};
+				return {_id: _id, error: new Wallet.Error(Wallet.Errors.NOT_ENOUGH_FUNDS)};
+			// } else if (result.resultCode === 'tefPAST_SEQ') {
+			// 	return {_id: _id, error: new Wallet.Error(Wallet.Errors.NOT_ENOUGH_FUNDS)};
 			} else {
-				return {error: new Wallet.Error(Wallet.Errors.EXCEPTION, result.resultCode)};
+				return {_id: _id, error: new Wallet.Error(Wallet.Errors.EXCEPTION, result.resultCode)};
 			}
 		} catch (e) {
 			this.log.error(e, 'Error when submitting tx');
@@ -379,8 +459,9 @@ class XRPWallet extends Wallet {
 	 * Just create random wallet
 	 * @return object with wallet data, should never fail
 	 */
-	createPaperWallet () {
-		let keypair = this.api.generateAddress(),
+	static createPaperWallet () {
+		let api = new RippleAPI({server: 'ws://aaa.com'}),
+			keypair = api.generateAddress(),
 			ret = {
 				address: keypair.address,
 				seed: keypair.secret
@@ -474,6 +555,20 @@ class XRPWallet extends Wallet {
 			this.log.error(e, 'during _onTx');
 		}
 	}
+
+	static async createTestWallet() {
+		let transport = new Transport({url: 'https://faucet.altnet.rippletest.net/accounts', retryPolicy: (error, attempts) => {
+			return error === 'timeout' || (error === null && attempts < 3);
+		}, conf: {timeout: 15000, headers: {accept: 'application/json'}}});
+
+		// {"account":{"address":"r3sg8QxXW33w9WcJYT146qsGYjBP7NSETA","secret":"snNGCLx7KUVQoy9HYCi6VjgkbybLi"},"balance":10000}
+		let info = await transport.retriableRequest(null, 'POST');
+		return {
+			address: info.account.address,
+			seed: info.account.secret,
+			balance: info.balance
+		};
+	}
 }
 
 XRPWallet.Tx = Wallet.Tx;
@@ -482,6 +577,8 @@ XRPWallet.Error = Wallet.Error;
 XRPWallet.Errors = Wallet.Errors;
 XRPWallet.Account = Wallet.Account;
 XRPWallet.Tx = Wallet.Tx;
-
+XRPWallet.SEPARATOR = '+';
+XRPWallet.ENCODING_SEPARATOR = '$';
+XRPWallet.EXTENSION_NAME = 'tag';
 
 module.exports = XRPWallet;

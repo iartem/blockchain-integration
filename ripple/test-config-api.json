@@ -7,12 +7,9 @@
 	"testnet": true,
 	"store": "mongodb://192.168.1.216:27017/lykke_test_ripple",
 	"node": "wss://s.altnet.rippletest.net:51233",
-	"assetId": "XRP_ASSET_ID",
-	"assetName": "Ripple",
+	"assetId": "XRP",
+	"assetName": "XRP",
 	"assetOpKey": "XRP",
 	"assetAccuracy": 6,
-	"refreshEach": 15000,
-	"wallet": {
-		"address": "rUkPdHs2a5Woaq1isxNGsWQW1MKiyZbzgB"
-	}
+	"refreshEach": 15000
 }

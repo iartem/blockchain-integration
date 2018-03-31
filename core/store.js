@@ -19,6 +19,10 @@ class MongoStore {
 		return this.client ? this.client.close() : Promise.resolve();
 	}
 
+	oid () {
+		return ObjectId.apply(driver, arguments);
+	}
+
 	reconnect () {
 		if (this.client) {
 			this.close();
@@ -110,6 +114,28 @@ class MongoStore {
 	}
 
 	txHistory (query, query2, limit, after) {
+		console.log([
+			{$match: query},
+			{$sort: {timestamp: 1}},
+			{$unwind: '$operations'}, 
+			{$project: {
+				_id: 1,
+				opid: 1, 
+				timestamp: 1, 
+				hash: 1, 
+				bounce: 1,
+				bounced: 1,
+				from: '$operations.from', 
+				sourcePaymentId: '$operations.sourcePaymentId',
+				to: '$operations.to',
+				paymentId: '$operations.paymentId',
+				amount: '$operations.amount', 
+				fee: '$operations.fee', 
+			}},
+			{$match: query2},
+			{$match: {hash: {$gt: after || ''}}},
+			{$limit: limit},
+		]);
 		return this.Transactions.aggregate([
 			{$match: query},
 			{$sort: {timestamp: 1}},
@@ -119,6 +145,8 @@ class MongoStore {
 				opid: 1, 
 				timestamp: 1, 
 				hash: 1, 
+				bounce: 1,
+				bounced: 1,
 				from: '$operations.from', 
 				sourcePaymentId: '$operations.sourcePaymentId',
 				to: '$operations.to',
@@ -226,7 +254,7 @@ class MongoStore {
 
 	delete (collection, id) {
 		this.log.debug(`DELETE ${collection.s.name}: ${JSON.stringify(id)}`);
-		return collection.deleteOne(typeof id === 'string' && !(id instanceof ObjectId) ? {_id: id} : id).then(d => d.deletedCount, e => {
+		return collection.deleteOne(typeof id === 'string' || (id instanceof ObjectId) ? {_id: id} : id).then(d => d.deletedCount, e => {
 			this.log.error(e, 'Error in DELETE');
 		});
 	}

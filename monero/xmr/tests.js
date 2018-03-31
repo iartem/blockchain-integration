@@ -392,8 +392,8 @@ describe('XMR', () => {
 
 			A6 = view.addressCreate();
 			A7 = view.addressCreate();
-			P6 = view.addressDecode(A6).paymentId;
-			P7 = view.addressDecode(A7).paymentId;
+			P6 = Wallet.addressDecode(A6).paymentId;
+			P7 = Wallet.addressDecode(A7).paymentId;
 			console.log(`created address A6 ${A6} (payment id ${P6}), A7 ${A7} (payment id ${P7})`);
 
 			view.onTx = (tx) => {

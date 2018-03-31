@@ -24,12 +24,12 @@ const index = (settings, routes={}) => {
 			});
 
 			process.on('uncaughtException', (err) => {
-				L.error(err, `Uncaught exception`);
+				L.error(err, 'Uncaught exception');
 				process.exit(1);
 			});
 
 			process.on('unhandledRejection', (err) => {
-				L.error(err, `Unhandled rejection`);
+				L.error(err, 'Unhandled rejection');
 				process.exit(1);
 			}); 
 
@@ -78,6 +78,9 @@ const index = (settings, routes={}) => {
 				const ms = Date.now() - start;
 				ctx.set('X-Response-Time', `${ms}ms`);
 				L.info(`request ${ctx.path} done with ${ctx.status} in ${ms}ms`);
+				if (ctx.status === 400) {
+					L.info(`response ${JSON.stringify(ctx.body)}`);
+				}
 			});
 
 			app.use(async (ctx, next) => {
@@ -86,7 +89,14 @@ const index = (settings, routes={}) => {
 				} catch (err) {
 					ctx.status = 400;
 					if (err.name === 'ValidationError') {
-						if (err.bouncer.key) {
+						if (err.bouncer.key === 'wallet') {
+							ctx.status = 503;
+							ctx.body = {
+								errorCode: 'unknown',
+								errorMessage: err.bouncer.message,
+								trace: err.stack
+							};
+						} else if (err.bouncer.key) {
 							ctx.body = {
 								errorCode: 'unknown',
 								errorMessage: 'Validation Error',
@@ -102,14 +112,14 @@ const index = (settings, routes={}) => {
 							};
 						}
 					} else if (err.name === 'WalletError') {
-						L.warn(err, `WalletError in wrapper middleware`);
+						L.warn(err, 'WalletError in wrapper middleware');
 						ctx.body = {
 							errorCode: 'unknown',
 							errorMessage: 'Wallet error: ' + (err.message || 'Unknown error'),
 							trace: err.stack
 						};
 					} else {
-						L.error(err, `Server error in wrapper middleware`);
+						L.error(err, 'Server error in wrapper middleware');
 						ctx.status = 500;
 						ctx.body = {
 							errorMessage: 'Server Error: ' + (err.message || JSON.stringify(err)),
@@ -138,6 +148,9 @@ const index = (settings, routes={}) => {
 
 			L.info(`Starting server on ${CFG.port}`);
 			let server = app.listen(CFG.port);
+			if (CFG.socketTimeout) {
+				server.setTimeout(CFG.socketTimeout);
+			}
 
 			srv.app = app;
 			srv.server = server;
@@ -164,7 +177,7 @@ const index = (settings, routes={}) => {
 			L.info(`Done starting chain ${CFG.chain}`);
 			resolve(srv);
 		}, err => {
-			L.error(err, `Error on initialization, won't start`);
+			L.error(err, 'Error on initialization, won\'t start');
 			L.monitor('Terminating (initialization error)');
 			process.exit(1);
 		});

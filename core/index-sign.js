@@ -1,4 +1,4 @@
-var CFG, SRV, log, Wallet, viewWallet;
+var CFG, SRV, log, Wallet, wallet, AD, VK, PK;
 
 /**
  * Some deffault routes for API service implemented according to one wallet scheme.
@@ -21,18 +21,46 @@ let API_ROUTES = {
 	},
 	
 	POST: {
+		/**
+		 * Initializing wallet without env & settings. Initialization can only be done once.
+		 * If needed preferences exist in settings and env, this endpoint returns 400.
+		 * Until wallet is initialized, wallet-related endpoints return 503.
+		 * 
+		 * @return {200} on success
+		 * @return {400} when already initialized or wrong parameters sent
+		 */
+		'/api/initialize': async ctx => {
+			if (wallet) {
+				throw new ValidationError('api', 'Already initialized, remove related keys from json settings & env to use this endpoint');
+			}
+
+			ctx.validateBody('WalletAddress').required('is required').isString('must be a string');
+			ctx.validateBody('WalletPrivateKey').required('is required').isString('must be a string');
+			if (Wallet.VIEWKEY_NEEDED) {
+				ctx.validateBody('WalletViewKey').required('is required').isString('must be a string');
+			}
+
+			await SRV.resetWallet(ctx.vals.WalletAddress, ctx.vals.WalletViewKey, ctx.vals.WalletPrivateKey);
+
+			await SRV.utils.wait(2000);
+
+			ctx.status = 200;
+		},
+
 		'/api/wallets': ctx => {
-			ctx.check(viewWallet.status === Wallet.Status.Ready, 'Wallet is not ready yet, please try again later');
+			log.info(`wallet ${typeof wallet}, status ${wallet && wallet.status}`);
+			ctx.validateParam('wallet').check(wallet && wallet.status === Wallet.Status.Ready, 'Wallet is not ready yet, please try again later');
 			ctx.validateBody('paymentId').optional().isString('must be a string');
 			
-			let address = viewWallet.addressCreate(ctx.vals.paymentId || undefined);
+			let address = wallet.addressCreate(ctx.vals.paymentId || undefined);
 			ctx.body = {
-				privateKey: process.env.PrivateKey,
+				privateKey: PK,
 				publicAddress: address
 			};
 		},
 
 		'/api/sign': async ctx => {
+			ctx.validateParam('wallet').check(wallet && wallet.status === Wallet.Status.Ready, 'Wallet is not ready yet, please try again later');
 			ctx.validateBody('privateKeys').required('is required').isArray('must be an array').isLength(1, 1, 'must have 1 private key');
 			ctx.validateBody('transactionContext').required('is required').isString('must be a string');
 
@@ -45,10 +73,10 @@ let API_ROUTES = {
 			}
 
 			// regular transaction
-			let wallet;
+			// let wallet;
 			try {
-				wallet = new Wallet(CFG.testnet, null, SRV.log('sign-wallet'), () => {});
-				await wallet.initSignWallet(CFG.wallet.address, ctx.vals.privateKeys[0]);
+				// wallet = new Wallet(CFG.testnet, null, SRV.log('sign-wallet'), () => {});
+				// await wallet.initSignWallet(AD, ctx.vals.privateKeys[0]);
 
 				let result = wallet.signTransaction(ctx.vals.transactionContext);
 				if (result.error) {
@@ -67,12 +95,12 @@ let API_ROUTES = {
 					throw e;
 				}
 				throw new Wallet.Error(Wallet.Errors.EXCEPTION, e.message || e.code || 'Unexpected exception in sign wallet');
-			} finally {
-				try {
-					await wallet.close();
-				} catch (e) {
-					log.error(e, 'Exception while closing sign wallet');
-				}
+			// } finally {
+			// 	try {
+			// 		await wallet.close();
+			// 	} catch (e) {
+			// 		log.error(e, 'Exception while closing sign wallet');
+			// 	}
 			}
 		}
 	},
@@ -100,17 +128,23 @@ const index = (settings, routes, WalletClass) => {
 		Wallet = WalletClass;
 
 		// initialize dummy wallet for addresses generation
-		SRV.resetWallet = () => {
-			viewWallet = new Wallet(CFG.testnet, null, SRV.log('view-wallet-offline'), () => {});
-			return viewWallet.initViewWalletOffline(CFG.wallet.address, CFG.wallet.view);
+		SRV.resetWallet = (address, view, privat) => {
+			AD = address || process.env.WalletAddress || CFG.WalletAddress;
+			PK = privat || process.env.WalletPrivateKey || CFG.WalletPrivateKey;
+			wallet = new Wallet(CFG.testnet, null, SRV.log('sign-wallet'), () => {});
+			return wallet.initSignWallet(AD, PK);
 		};
-		SRV.resetWallet();
+		if ((CFG.WalletAddress && CFG.WalletPrivateKey) ||
+			(process.env.WalletAddress && process.env.WalletPrivateKey)) {
+			SRV.resetWallet();
+		}
+
 
 		// graceful shutdown
 		let _close = SRV.close.bind(SRV);
 		SRV.close = async () => {
-			if (viewWallet) {
-				await viewWallet.close();
+			if (wallet) {
+				await wallet.close();
 			}
 			await _close();
 		};

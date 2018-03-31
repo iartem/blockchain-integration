@@ -153,9 +153,9 @@ class XMRWallet extends Wallet {
 		}
 	}
 
-	addressDecode(str) {
+	static addressDecode(str) {
 		try {
-			let [address, paymentId] = this.xmr.addressDecode(str);
+			let [address, paymentId] = xmr.XMR.addressDecode(str);
 			if (address) {
 				return {
 					address: address,
@@ -168,10 +168,10 @@ class XMRWallet extends Wallet {
 		}
 	}
 
-	addressEncode(address, paymentId) {
+	static addressEncode(address, paymentId) {
 		try {
 			if (paymentId) {
-				return this.xmr.addressEncode(address, paymentId);
+				return xmr.XMR.addressEncode(address, paymentId);
 			} else {
 				return address;
 			}
@@ -438,66 +438,71 @@ class XMRWallet extends Wallet {
 	 * Just create random wallet
 	 * @return object with wallet data, should never fail
 	 */
-	createPaperWallet () {
-		let data = this.xmr.createPaperWallet('English'); 
-		if (data.length === 4) {
-			let ret = {
-				seed: data[0],
-				view: data[1],
-				address: data[2],
-				mnemonics: data[3]
-			};
+	static createPaperWallet () {
+		try {
+			let data = xmr.XMR.createPaperWallet('English');
+			
+			if (data.length === 4) {
+				let ret = {
+					seed: data[0],
+					view: data[1],
+					address: data[2],
+					mnemonics: data[3]
+				};
 
-			// if (fillSourceAddress && fillSourceSpendKey) {
-			// 	let seed = new XMRWallet(this.testnet, this.node, log, console.log, 10000);
-			// 	await seed.initSignWallet(fillSourceAddress, fillSourceSpendKey);
+				// if (fillSourceAddress && fillSourceSpendKey) {
+				// 	let seed = new XMRWallet(this.testnet, this.node, log, console.log, 10000);
+				// 	await seed.initSignWallet(fillSourceAddress, fillSourceSpendKey);
 
-			// 	seed.connect();
-			// 	seed.refresh();
+				// 	seed.connect();
+				// 	seed.refresh();
 
-			// 	let tx = new Wallet.Tx('id', 1, 0);
-			// 	tx.addPayment(seed.address(), ret.address, 'monero', 100);
+				// 	let tx = new Wallet.Tx('id', 1, 0);
+				// 	tx.addPayment(seed.address(), ret.address, 'monero', 100);
 
-			// 	let result = seed.createUnsignedTransaction(tx);
-			// 	console.log('fill unsigned', Object.keys(result));
-				
-			// 	result = seed.signTransaction(result.unsigned);
-			// 	console.log('fill signed', Object.keys(result));
-				
-			// 	result = seed.submitSignedTransaction(result.signed);
-			// 	console.log('fill sent', Object.keys(result));
+				// 	let result = seed.createUnsignedTransaction(tx);
+				// 	console.log('fill unsigned', Object.keys(result));
+					
+				// 	result = seed.signTransaction(result.unsigned);
+				// 	console.log('fill signed', Object.keys(result));
+					
+				// 	result = seed.submitSignedTransaction(result.signed);
+				// 	console.log('fill sent', Object.keys(result));
 
-			// 	let wallet = new XMRWallet(this.testnet, this.node, log, console.log, 10000);
-			// 	await wallet.initViewWallet(ret.address, ret.view);
+				// 	let wallet = new XMRWallet(this.testnet, this.node, log, console.log, 10000);
+				// 	await wallet.initViewWallet(ret.address, ret.view);
 
-			// 	while (true) {
-			// 		console.log('created wallet balance', wallet.balance);
-			// 		if (wallet.balance.unlocked !== 0) {
-			// 			return ret;
-			// 		}
-			// 		await utils.wait(60000);
-			// 	}
-			// 	// let seedView = new XMRWallet(this.testnet, this.node, log, console.log, 10000);
-			// 	// let seedSpend = new XMRWallet(this.testnet, this.node, log, console.log, 10000);
+				// 	while (true) {
+				// 		console.log('created wallet balance', wallet.balance);
+				// 		if (wallet.balance.unlocked !== 0) {
+				// 			return ret;
+				// 		}
+				// 		await utils.wait(60000);
+				// 	}
+				// 	// let seedView = new XMRWallet(this.testnet, this.node, log, console.log, 10000);
+				// 	// let seedSpend = new XMRWallet(this.testnet, this.node, log, console.log, 10000);
 
-			// 	// await seedView.initViewWallet(fillSourceAddress, fillSourceViewKey);
-			// 	// await seedSpend.initSignWallet(fillSourceAddress, fillSourceSpendKey);
+				// 	// await seedView.initViewWallet(fillSourceAddress, fillSourceViewKey);
+				// 	// await seedSpend.initSignWallet(fillSourceAddress, fillSourceSpendKey);
 
-			// 	// let tx = new Wallet.Tx('id', 1, 0);
-			// 	// tx.addPayment(seedView.address(), ret.address, 'monero', 100);
+				// 	// let tx = new Wallet.Tx('id', 1, 0);
+				// 	// tx.addPayment(seedView.address(), ret.address, 'monero', 100);
 
-			// 	// let result = seedView.createUnsignedTransaction(tx);
-			// 	// console.log('fill unsigned', Object.keys(result));
-				
-			// 	// result = seedSpend.signTransaction(result.unsigned);
-			// 	// console.log('fill signed', Object.keys(result));
-				
-			// 	// result = seedView.submitSignedTransaction(result.signed);
-			// 	// console.log('fill sent', Object.keys(result));
-			// }
-			return ret;
-		} else {
-			return data;
+				// 	// let result = seedView.createUnsignedTransaction(tx);
+				// 	// console.log('fill unsigned', Object.keys(result));
+					
+				// 	// result = seedSpend.signTransaction(result.unsigned);
+				// 	// console.log('fill signed', Object.keys(result));
+					
+				// 	// result = seedView.submitSignedTransaction(result.signed);
+				// 	// console.log('fill sent', Object.keys(result));
+				// }
+				return ret;
+			} else {
+				return data;
+			}
+		} catch (e) {
+			throw new Wallet.Error(Wallet.Errors.EXCEPTION, e.message);
 		}
 	}
 
@@ -528,6 +533,8 @@ XMRWallet.Error = Wallet.Error;
 XMRWallet.Errors = Wallet.Errors;
 XMRWallet.Account = Wallet.Account;
 XMRWallet.Tx = Wallet.Tx;
+XMRWallet.MANY_OUTPUTS = true;
+XMRWallet.VIEWKEY_NEEDED = true;
 
 
 module.exports = XMRWallet;

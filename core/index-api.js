@@ -1,3 +1,5 @@
+const crypto = require('crypto');
+
 var CFG, SRV, log, ValidationError, Wallet, syncRequired;
 
 /**
@@ -11,7 +13,7 @@ var CFG, SRV, log, ValidationError, Wallet, syncRequired;
  * @return {Tx}		tx object
  */
 let createTx = async (ctx, multipleInputs, multipleOutputs) => {
-	ctx.check(SRV.wallet.status === Wallet.Status.Ready, 'Wallet is not ready yet, please try again later');
+	ctx.validateParam('wallet').check(SRV.wallet && SRV.wallet.status === Wallet.Status.Ready, 'Wallet is not ready yet, please try again later');
 	ctx.validateBody('operationId').required('is required').isString('must be a string');
 	ctx.validateBody('assetId').required('is required').isString('must be a string').eq(CFG.assetId, 'must be equal to "' + CFG.assetId + '"');
 
@@ -27,10 +29,10 @@ let createTx = async (ctx, multipleInputs, multipleOutputs) => {
 
 		log.info(`Constructing multiple inputs tx for ${ctx.vals.operationId}`);
 
-		let to = SRV.wallet.addressDecode(ctx.vals.toAddress);
+		let to = SRV.Wallet.addressDecode(ctx.vals.toAddress);
 
 		ctx.vals.inputs.forEach(input => {
-			let from = SRV.wallet.addressDecode(input.fromAddress);
+			let from = SRV.Wallet.addressDecode(input.fromAddress);
 			tx.addPayment(from.address, to.address, CFG.assetOpKey, input.amount, from.paymentId, to.paymentId);
 		});
 
@@ -44,10 +46,10 @@ let createTx = async (ctx, multipleInputs, multipleOutputs) => {
 
 		log.info(`Constructing multiple outputs tx for ${ctx.vals.operationId}`);
 	
-		let from = SRV.wallet.addressDecode(ctx.vals.fromAddress);
+		let from = SRV.Wallet.addressDecode(ctx.vals.fromAddress);
 
 		ctx.vals.outputs.forEach(output => {
-			let to = SRV.wallet.addressDecode(output.toAddress);
+			let to = SRV.Wallet.addressDecode(output.toAddress);
 			tx.addPayment(from.address, to.address, CFG.assetOpKey, output.amount, from.paymentId, to.paymentId);
 		});
 	} else {
@@ -56,7 +58,7 @@ let createTx = async (ctx, multipleInputs, multipleOutputs) => {
 		ctx.validateBody('amount').required('is required').toInt('must be an integer').gt(0, 'is too small');
 		ctx.validateBody('includeFee').required('is required').isBoolean();
 		
-		if (SRV.wallet.addressDecode(ctx.vals.fromAddress).address !== SRV.wallet.address()) {
+		if (SRV.Wallet.addressDecode(ctx.vals.fromAddress).address !== SRV.wallet.address()) {
 			throw new ValidationError('fromAddress', 'Only wallet-originated transactions supported');
 		}
 
@@ -66,8 +68,8 @@ let createTx = async (ctx, multipleInputs, multipleOutputs) => {
 
 		log.info(`Constructing 1-to-1 tx for ${ctx.vals.operationId}`);
 
-		let from = SRV.wallet.addressDecode(ctx.vals.fromAddress),
-			to = SRV.wallet.addressDecode(ctx.vals.toAddress);
+		let from = SRV.Wallet.addressDecode(ctx.vals.fromAddress),
+			to = SRV.Wallet.addressDecode(ctx.vals.toAddress);
 
 		tx.addPayment(from.address, to.address, CFG.assetOpKey, ctx.vals.amount, from.paymentId, to.paymentId);
 	}
@@ -124,7 +126,7 @@ let createTx = async (ctx, multipleInputs, multipleOutputs) => {
  * @return {Object}		response body object
  */
 let processTx = async (ctx, tx) => {
-	var ret;
+	var ret, bounces, bouncingTxs;
 
 	if (tx instanceof ValidationError) {
 		if (tx.bouncer.key === 'notEnoughBalance' || tx.bouncer.key === 'amountIsTooSmall') {
@@ -144,9 +146,48 @@ let processTx = async (ctx, tx) => {
 		};
 	} else if (!syncRequired) {
 		log.debug(`Sync not required for ${tx._id}`);
+
+		if (CFG.bounce) {
+			bouncingTxs = await SRV.store.txFind({bounced: false});
+			let existingBounces, existingAddresses;
+			if (bouncingTxs.length) {
+				log.info(`Going to bounce ${bouncingTxs.length} transactions: ${bouncingTxs.map(tx => tx.hash).join(',')}`);
+				bouncingTxs = bouncingTxs.map(Wallet.Tx.fromJSON);
+
+				// generate unique source tags to prevent inifite bounces
+				do {
+					bounces = bouncingTxs.map(tx => {
+						let bounce = new Wallet.Tx();
+						bounce.bounce = crypto.randomBytes(4).readUInt32BE(0, true);
+						tx.bounced = bounce.bounce;
+						tx.operations.forEach(op => {
+							bounce.addPayment(op.to, op.from, op.asset, op.amount, bounce.bounce, op.sourcePaymentId);
+						});
+						return bounce;
+					});
+
+					existingBounces = await SRV.store.txFind({bounce: {$in: bounces.map(b => b.bounce)}});
+					existingAddresses = await SRV.store.accountFind({paymentId: {$in: bounces.map(b => b.bounce)}});
+
+					existingBounces = existingBounces ? existingBounces.length : 0 || 0;
+					existingAddresses = existingAddresses ? existingAddresses.length : 0 || 0;
+
+				} while (existingBounces > 0 || existingAddresses > 0);
+
+				// create bounce txses
+				await Promise.all(bounces.map(async b => {
+					let json = b.toJSON();
+					await SRV.store.txCreate(json);
+					b._id = json._id;
+				}));
+
+				// update bounced to reflect bounce tx is created
+				await Promise.all(bouncingTxs.map(t => SRV.store.tx(t._id, {bounced: t.bounced}, false)));
+			}
+		}
 	
 		// sync not required, creating tx
-		let result = await SRV.wallet.createUnsignedTransaction(tx);
+		let result = await SRV.wallet.createUnsignedTransaction(tx, bounces);
 
 		if (result.tx) {
 			tx.operations.forEach(o => {
@@ -174,6 +215,10 @@ let processTx = async (ctx, tx) => {
 			};
 		} else if (result.error) {
 			log.warn(result.error, `Error when creating tx ${tx._id}`);
+			if (bounces) {
+				await SRV.store.tx({_id: {$in: bouncingTxs.map(b => b._id)}}, {bounced: false});
+				await Promise.all(bounces.map(b => SRV.store.txDelete(b._id)));
+			}
 			// other errors
 			if (result.error.type === Wallet.Errors.NOT_ENOUGH_FUNDS || result.error.type === Wallet.Errors.NOT_ENOUGH_AMOUNT) {
 				return {
@@ -185,6 +230,13 @@ let processTx = async (ctx, tx) => {
 		} else {
 			// no errors, returning constructed tx
 			log.debug(`Created tx ${tx._id}`);
+			if (bounces) {
+				try {
+					await Promise.all(bounces.map(b => SRV.store.tx(b._id, b.toJSON(), false)));
+				} catch (e) {
+					log.warn(e, `Error when updating bounced txs operations after construction`);
+				}
+			}
 			ret = {
 				transactionContext: result.unsigned
 			};
@@ -235,10 +287,10 @@ let processTx = async (ctx, tx) => {
  * @return {Object} 	response body
  */
 let findTx = async (ctx) => {
-	ctx.check(SRV.wallet.status === Wallet.Status.Ready, 'Wallet is not ready yet, please try again later');
+	ctx.validateParam('wallet').check(SRV.wallet && SRV.wallet.status === Wallet.Status.Ready, 'Wallet is not ready yet, please try again later');
 	ctx.validateParam('operationId').required('is required').isString('must be a string');
 
-	let tx = await ctx.store.tx({opid: ctx.vals.operationId, observing: true});
+	let tx = await ctx.store.tx({opid: ctx.vals.operationId, observing: true, bounce: {$exists: false}});
 
 	if (tx && tx.status !== Wallet.Tx.Status.Initial) {
 		log.info(`Found tx ${ctx.vals.operationId}`);
@@ -311,19 +363,34 @@ let onTxCallback = async info => {
 				return;
 			}
 
-			// processing only operaions with paymentId, that is identifiable cash-ins
-			let ops = tx.operations.filter(op => op.paymentId && op.to === SRV.wallet.address()),
-				// updating account balances
-				updates = await Promise.all(ops.map(op => SRV.store.account({paymentId: op.paymentId}, {$inc: {balance: op.amount}, $set: {block: info.block}}, false)));
-
-			updates.forEach((upd, i) => {
-				let op = ops[i];
-				if (upd) {
-					log.info(`New cash-in to ${op.to} / ${op.paymentId} (${SRV.wallet.addressCreate(op.paymentId)}) for ${op.amount} ${op.asset}`);
-				} else {
-					log.warn(`Didn't increment ${op.to} / ${op.paymentId} (${SRV.wallet.addressCreate(op.paymentId)}) for ${op.amount} ${op.asset} - no such account observed`);
+			if (CFG.bounce && tx.operations.filter(op => !op.paymentId && op.to === SRV.wallet.address()).length) {
+				// mark tx as bounce-required
+				let updated = await SRV.store.tx(created._id, {bounced: false}, false);
+				if (!updated) {
+					log.warn(`New bounce required for ${JSON.stringify(created)}, but failed to update db`);
 				}
-			});
+			} else {
+				// processing only operaions with paymentId, that is identifiable cash-ins
+				let ops = tx.operations.filter(op => op.paymentId && op.to === SRV.wallet.address()),
+					// updating account balances
+					updates = await Promise.all(ops.map(op => SRV.store.account({paymentId: op.paymentId}, {$inc: {balance: op.amount}, $set: {block: info.block}}, false)));
+
+				updates.forEach((upd, i) => {
+					let op = ops[i];
+					if (upd) {
+						log.info(`New cash-in to ${op.to} / ${op.paymentId} (${SRV.wallet.addressCreate(op.paymentId)}) for ${op.amount} ${op.asset}`);
+					} else {
+						log.warn(`Didn't increment ${op.to} / ${op.paymentId} (${SRV.wallet.addressCreate(op.paymentId)}) for ${op.amount} ${op.asset} - no such account observed`);
+						if (CFG.bounce && CFG.bounce !== op.paymentId) {
+							log.warn(`New bounce required for ${JSON.stringify(created)}`);
+							if (ops.length === 1) {
+								log.warn(`Marking tx as bounce-required ${JSON.stringify(created)}`);
+								SRV.store.tx(created._id, {bounced: false}, false);
+							}
+						}
+					}
+				});
+			}
 
 		} else {
 			// update tx status
@@ -377,7 +444,7 @@ let onTxCallback = async info => {
 			if (Object.keys(update).length) {
 				updated = await SRV.store.tx({hash: info.hash}, update, false);
 				if (!updated) {
-					log.error(`Failed to update tx hash ${info.hash} with operations: ${JSON.stringify(update)}`);
+					log.warn(`Failed to update tx hash ${info.hash} with operations: ${JSON.stringify(update)}`);
 				}
 			}
 		}
@@ -401,7 +468,8 @@ let API_ROUTES = {
 				name: CFG.serviceName,
 				version: CFG.version,
 				env: process.env.ENV_INFO || null,
-				isDebug: CFG.testnet
+				isDebug: CFG.testnet,
+				contractVersion: '1.1.0'
 			};
 		},
 
@@ -413,8 +481,27 @@ let API_ROUTES = {
 			ctx.body = {
 				isTransactionsRebuildingSupported: false,
 				areManyInputsSupported: true,
-				areManyOutputsSupported: true
+				areManyOutputsSupported: !!Wallet.MANY_OUTPUTS,
+				isTestingTransfersSupported: true,
+				isPublicAddressExtensionRequired: !!Wallet.SEPARATOR
 			};
+		},
+
+		/**
+		 * Standard constants endpoint
+		 * @return {200 Object}
+		 */
+		'/api/constants': ctx => {
+			if (Wallet.SEPARATOR) {
+				ctx.body = {
+					publicAddressExtension: {
+						separator: Wallet.SEPARATOR,
+						displayName: Wallet.EXTENSION_NAME
+					}
+				};
+			} else {
+				throw new ValidationError('publicAddressExtension', 'Not applicable for blockchains without address extensions');
+			}
 		},
 
 		/**
@@ -465,7 +552,7 @@ let API_ROUTES = {
 		'/api/addresses/:address/validity': ctx => {
 			ctx.validateParam('address').required('is required').isString('must be a string');
 			
-			let decoded = SRV.wallet.addressDecode(ctx.vals.address);
+			let decoded = SRV.Wallet.addressDecode(ctx.vals.address);
 
 			log.info(`Address ${ctx.vals.address} is ${decoded ? 'valid' : 'invalid'}`);
 			
@@ -483,7 +570,7 @@ let API_ROUTES = {
 		 * @return {200 Object}
 		 */
 		'/api/balances': async ctx => {
-			ctx.check(SRV.wallet.status === Wallet.Status.Ready, 'Wallet is not ready yet, please try again later');
+			ctx.validateParam('wallet').check(SRV.wallet && SRV.wallet.status === Wallet.Status.Ready, 'Wallet is not ready yet, please try again later');
 			ctx.validateQuery('take').required('is required').toInt('must be a number').gt(0, 'must be greater than 0').lt(1000, 'must be less than 1000');
 			ctx.validateQuery('continuation').optional().toInt('must be an int-in-string').gt(0, 'must be greater than 0');
 
@@ -521,13 +608,18 @@ let API_ROUTES = {
 		 * @return {200 Array}	of transactions
 		 */
 		'/api/transactions/history/from/:address': async ctx => {
-			ctx.check(SRV.wallet.status === Wallet.Status.Ready, 'Wallet is not ready yet, please try again later');
+			ctx.validateParam('wallet').check(SRV.wallet && SRV.wallet.status === Wallet.Status.Ready, 'Wallet is not ready yet, please try again later');
 			ctx.validateParam('address').required('is required').isValidChainAddress();
 			ctx.validateQuery('take').required('is required').toInt('must be a number').gt(0, 'must be greater than 0').lt(1000, 'must be less than 1000');
 			ctx.validateQuery('afterHash').optional().isString('must be a string');
+			ctx.validateQuery('bounces').optional().toBoolean('must be a boolean string');
 
-			let parts = SRV.wallet.addressDecode(ctx.params.address);
-			let query = {status: Wallet.Tx.Status.Completed}, query2 = {};
+			let parts = SRV.Wallet.addressDecode(ctx.params.address);
+			let query = {status: Wallet.Tx.Status.Completed, bounce: {$exists: false}, bounced: {$exists: false}}, query2 = {};
+			if (ctx.vals.bounces) {
+				delete query.bounce;
+				delete query.bounced;
+			}
 			if (parts.paymentId) {
 				query['operations.from'] = parts.address;
 				query['operations.sourcePaymentId'] = parts.paymentId;
@@ -550,22 +642,29 @@ let API_ROUTES = {
 					operationId: tx.opid || '',
 					timestamp: new Date(tx.timestamp).toISOString(),
 					fromAddress: ctx.vals.address,
-					toAddress: SRV.wallet.addressEncode(tx.to, tx.paymentId),
+					toAddress: SRV.Wallet.addressEncode(tx.to, tx.paymentId),
 					assetId: CFG.assetId,
 					amount: '' + tx.amount,
-					hash: tx.hash
+					hash: tx.hash,
+					bounce: ctx.vals.bounces ? tx.bounce : undefined,
+					bounced: ctx.vals.bounces ? tx.bounced : undefined
 				};
 			});
 		},
 
 		'/api/transactions/history/to/:address': async ctx => {
-			ctx.check(SRV.wallet.status === Wallet.Status.Ready, 'Wallet is not ready yet, please try again later');
+			ctx.validateParam('wallet').check(SRV.wallet && SRV.wallet.status === Wallet.Status.Ready, 'Wallet is not ready yet, please try again later');
 			ctx.validateParam('address').required('is required').isValidChainAddress();
 			ctx.validateQuery('take').required('is required').toInt('must be a number').gt(0, 'must be greater than 0').lt(1000, 'must be less than 1000');
 			ctx.validateQuery('afterHash').optional().isString('must be a string');
+			ctx.validateQuery('bounces').optional().toBoolean('must be a boolean string');
 
-			let parts = SRV.wallet.addressDecode(ctx.params.address);
-			let query = {status: Wallet.Tx.Status.Completed}, query2 = {};
+			let parts = SRV.Wallet.addressDecode(ctx.params.address);
+			let query = {status: Wallet.Tx.Status.Completed, bounce: {$exists: false}, bounced: {$exists: false}}, query2 = {};
+			if (ctx.vals.bounces) {
+				delete query.bounce;
+				delete query.bounced;
+			}
 			if (parts.paymentId) {
 				query['operations.to'] = parts.address;
 				query['operations.paymentId'] = parts.paymentId;
@@ -587,11 +686,13 @@ let API_ROUTES = {
 				return {
 					operationId: tx.opid || '',
 					timestamp: new Date(tx.timestamp).toISOString(),
-					fromAddress: SRV.wallet.addressEncode(tx.from, tx.sourcePaymentId),
+					fromAddress: SRV.Wallet.addressEncode(tx.from, tx.sourcePaymentId),
 					toAddress: ctx.vals.address,
 					assetId: CFG.assetId,
 					amount: '' + tx.amount,
-					hash: tx.hash
+					hash: tx.hash,
+					bounce: ctx.vals.bounces ? tx.bounce : undefined,
+					bounced: ctx.vals.bounces ? tx.bounced : undefined
 				};
 			});
 		}
@@ -599,16 +700,41 @@ let API_ROUTES = {
 	
 	POST: {
 		/**
+		 * Initializing wallet without env & settings. Initialization can only be done once.
+		 * If needed preferences exist in settings and env, this endpoint returns 400.
+		 * Until wallet is initialized, wallet-related endpoints return 503.
+		 * 
+		 * @return {200} on success
+		 * @return {400} when already initialized or wrong parameters sent
+		 */
+		'/api/initialize': async ctx => {
+			if (SRV.wallet) {
+				throw new ValidationError('api', 'Already initialized, remove related keys from json settings & env to use this endpoint');
+			}
+
+			ctx.validateBody('WalletAddress').required('is required').isString('must be a string');
+			if (Wallet.VIEWKEY_NEEDED) {
+				ctx.validateBody('WalletViewKey').required('is required').isString('must be a string');
+			}
+
+			SRV.resetWallet(ctx.vals.WalletAddress, ctx.vals.WalletViewKey);
+
+			await SRV.utils.wait(2000);
+
+			ctx.status = 200;
+		},
+
+		/**
 		 * Starts observation of balance of a particular address.
 		 * 
 		 * @return {200}	if started observing
 		 * @return {409}	if already observing
 		 */
 		'/api/balances/:address/observation': async ctx => {
-			ctx.check(SRV.wallet.status === Wallet.Status.Ready, 'Wallet is not ready yet, please try again later');
+			ctx.validateParam('wallet').check(SRV.wallet && SRV.wallet.status === Wallet.Status.Ready, 'Wallet is not ready yet, please try again later');
 			ctx.validateParam('address').required('is required').isValidChainAddress();
 
-			let addr = SRV.wallet.addressDecode(ctx.params.address);
+			let addr = SRV.Wallet.addressDecode(ctx.params.address);
 
 			if (addr.address !== SRV.wallet.address()) {
 				throw new ValidationError('address', 'Only wallet address & subaddresses supported');
@@ -673,7 +799,7 @@ let API_ROUTES = {
 		 * @return {204}	if no such transaction was cretated using POST /api/transactions
 		 */
 		'/api/transactions/broadcast': async ctx => {
-			ctx.check(SRV.wallet.status === Wallet.Status.Ready, 'Wallet is not ready yet, please try again later');
+			ctx.validateParam('wallet').check(SRV.wallet && SRV.wallet.status === Wallet.Status.Ready, 'Wallet is not ready yet, please try again later');
 			ctx.validateBody('operationId').required('is required').isString('must be a string');
 			ctx.validateBody('signedTransaction').required('is required').isString('must be a string');
 
@@ -699,7 +825,12 @@ let API_ROUTES = {
 					log.info(`Successfully completed tx ${ctx.vals.operationId}`);
 				} else {
 					// common cash-out
-					let result = await SRV.wallet.submitSignedTransaction(ctx.request.body.signedTransaction);
+					let result = await SRV.wallet.submitSignedTransaction(ctx.request.body.signedTransaction),
+						bounces;
+
+					bounces = typeof result === 'object' && result.length ? result.slice(1) : [];
+					result = typeof result === 'object' && result.length ? result[0] : result;
+
 					// next time we need to do full sync of wallets
 					if (result.error && result.error.type === Wallet.Errors.SYNC_REQUIRED) {
 						log.warn('Sync of wallets required');
@@ -751,6 +882,41 @@ let API_ROUTES = {
 					} else {
 						throw new Wallet.Error(Wallet.Errors.EXCEPTION, 'neither hash, nor error returned by submitSignedTransaction');
 					}
+
+					if (bounces.length) {
+						let errors = bounces.filter(b => !!b.error).map(b => b.error.message || b.error.code || b.error);
+
+						if (errors.length) {
+							log.error(`Errors during bounces submission: ${JSON.stringify(errors.join(', '))}`);
+						}
+
+						try {
+							await Promise.all(bounces.map(b => {
+								if (!b._id) {
+									return Promise.resolve();
+								}
+								let update = {timestamp: b.timestamp || Date.now()};
+								if (b.page) {
+									update.page = b.page;
+								}
+								if (b.block) {
+									update.block = b.block;
+								}
+								if (b.error) {
+									update.error = b.error;
+									update.status = Wallet.Tx.Status.Failed;
+									update.error = b.error.message || 'Unknown bounce error';
+								} else {
+									update.hash = b.hash;
+									update.status = Wallet.Tx.Status.Sent;
+									update.observing = true;
+								}
+								return SRV.store.tx({_id: SRV.store.oid(b._id)}, update, false);
+							}));
+						} catch (e) {
+							log.error(e, 'Errors during bounces saving');
+						}
+					}
 				}
 
 				ctx.status = 200;
@@ -779,6 +945,119 @@ let API_ROUTES = {
 		'/api/transactions/history/to/:address/observation': ctx => {
 			ctx.status = 200;
 		},
+
+		/**
+		 * Endpoint used in tests to fill test wallets with some coins.
+		 * Stellar & Ripple also support creating test wallets (Monero doesn't). 
+		 * Leave fromAddress, toAddress & amount empty in order to create test wallet, it will be returned in response:
+		 * {address: '', seed: '', balance: 123}.
+		 * 
+		 * @return {200}     in case of success
+		 */
+		'/api/testing/transfers': async ctx => {
+			if (ctx.request.body && ctx.request.body.fromAddress && ctx.request.body.toAddress) {
+				ctx.validateBody('fromAddress').required('is required').isValidChainAddress();
+				ctx.validateBody('fromPrivateKey').required('is required').isString('must be a string');
+				ctx.validateBody('toViewKey').optional().isString('must be a string');
+				ctx.validateBody('assetId').required('is required').isString('must be a string').eq(CFG.assetId, 'must be equal to "' + CFG.assetId + '"');
+
+				let lg = SRV.log('testwallet'),
+					txes = {},
+					createWallet = () => new Wallet(CFG.testnet, CFG.node, SRV.log('testwallet'), (tx) => {
+						txes[tx.hash] = tx;
+						lg.debug(`got tx ${JSON.stringify(tx)}`);
+					}, 10000);
+
+				let view, sign;
+				try {
+					view = createWallet();
+					sign = createWallet();
+
+					let amount = Array.isArray(ctx.request.body.amount) ? ctx.request.body.amount : [ctx.request.body.amount],
+						address = Array.isArray(ctx.request.body.toAddress) ? ctx.request.body.toAddress : [ctx.request.body.toAddress],
+						fr = SRV.Wallet.addressDecode(ctx.vals.fromAddress);
+
+					await view.initViewWallet(fr.address);
+					await sign.initSignWallet(fr.address, ctx.vals.fromPrivateKey);
+
+					let gogogo = async tx => {
+						let unsigned = await view.createUnsignedTransaction(tx);
+						if (unsigned.error) {
+							log.error(`Error during tx creation: ${JSON.stringify(unsigned.error)}`);
+							throw unsigned.error;
+						}
+						log.info(`Created tx: ${JSON.stringify(unsigned)}`);
+
+						let signed = sign.signTransaction(unsigned.unsigned);
+						if (signed.error) {
+							log.error(`Error during tx signing: ${JSON.stringify(signed.error)}`);
+							throw signed.error;
+						}
+						log.info(`Signed tx: ${JSON.stringify(signed)}`);
+
+						let sent = await view.submitSignedTransaction(signed.signed);
+						if (sent.error) {
+							log.error(`Error during tx sending: ${JSON.stringify(sent.error)}`);
+							throw sent.error;
+						}
+						log.info(`Sent tx: ${JSON.stringify(sent)}`);
+
+						return sent;
+					};
+
+					let results = [];
+					if (Wallet.MANY_OUTPUTS) {
+						let tx = new Wallet.Tx('someid', 1, 0);
+						address.forEach((addr, i) => {
+							let to = SRV.Wallet.addressDecode(addr);
+							tx.addPayment(fr.address, to.address, CFG.assetOpKey, amount[i], fr.paymentId, to.paymentId);
+						});
+
+						let res = await gogogo(tx);
+						results.push(res.hash);
+					} else {
+						results = await SRV.utils.promiseSerial(address.map((addr, i) => {
+							return () => {
+								let tx = new Wallet.Tx('someid', 1, 0),
+									to = SRV.Wallet.addressDecode(addr);
+								
+								tx.addPayment(fr.address, to.address, CFG.assetOpKey, amount[i], fr.paymentId, to.paymentId);
+
+								return gogogo(tx);
+							};
+						}));
+
+						results = results.map(r => r.hash);
+
+						await SRV.utils.wait(3000);
+					}
+
+					let start = Date.now(),
+						waiting = results.slice();
+
+					while (Date.now() - start < (CFG.socketTimeout || 600000)) {
+						waiting = waiting.filter(hash => !txes[hash] || (txes[hash].status !== Wallet.Tx.Status.Completed && txes[hash].status !== Wallet.Tx.Status.Failed));
+						if (waiting.length === 0) {
+							break;
+						}
+						await SRV.utils.wait(10000);
+					}
+
+					ctx.body = results.map(hash => txes[hash] || hash);
+				} finally {
+					try { view.close(); } catch (e) { log.error(e, 'when tried to close test view wallet'); }
+					try { sign.close(); } catch (e) { log.error(e, 'when tried to close test sign wallet'); }
+				}
+
+			} else {
+				if (typeof Wallet.createTestWallet === 'function') {
+					ctx.body = await Wallet.createTestWallet();
+				} else {
+					throw new ValidationError('fromAddress', 'is required');
+				}
+			}
+
+		}
 	},
 
 	DELETE: {
@@ -873,7 +1152,7 @@ const index = (settings, routes, WalletClass) => {
 		SRV = server;
 		CFG = SRV.CFG;
 		log = SRV.log('core-api');
-		Wallet = WalletClass;
+		Wallet = SRV.Wallet = WalletClass;
 
 		// find all pending transactions so wallet could refresh their status
 		let pending = await SRV.store.txFind({status: {$in: [Wallet.Tx.Status.Initial, Wallet.Tx.Status.Sent, Wallet.Tx.Status.Locked]}}, {hash: 1, status: 1});
@@ -885,11 +1164,14 @@ const index = (settings, routes, WalletClass) => {
 		log.info(`Last tx ${last.length && last[0].page}`);
 
 		// view wallet initialization
-		SRV.resetWallet = () => {
+		SRV.resetWallet = (address, view) => {
 			SRV.wallet = new Wallet(CFG.testnet, CFG.node, SRV.log('view-wallet'), onTxCallback, CFG.refreshEach, pending, last.length && last[0].page);
-			return SRV.wallet.initViewWallet(CFG.wallet.address, CFG.wallet.view);
+			return SRV.wallet.initViewWallet(address || process.env.WalletAddress || CFG.WalletAddress, view || process.env.WalletViewKey || CFG.WalletViewKey);
 		};
-		SRV.resetWallet();
+		if ((CFG.WalletAddress && (!Wallet.VIEWKEY_NEEDED || CFG.WalletViewKey)) ||
+			(process.env.WalletAddress && (!Wallet.VIEWKEY_NEEDED || process.env.WalletViewKey))) {
+			SRV.resetWallet();
+		}
 
 		// graceful shutdown
 		let _close = SRV.close.bind(SRV);
@@ -903,18 +1185,18 @@ const index = (settings, routes, WalletClass) => {
 		// standard validation methods
 		ValidationError = SRV.ValidationError;
 		SRV.Validator.addMethod('isValidChainAddress', function () {
-			this.checkPred(val => !!SRV.wallet.addressDecode(val), `must be valid ${CFG.chain} address`);
+			this.checkPred(val => !!SRV.Wallet.addressDecode(val), `must be valid ${CFG.chain} address`);
 			return this;
 		});
 
 		SRV.Validator.addMethod('isValidInputsList', function () {
-			this.checkPred(arr => !arr.filter(input => !input.fromAddress || !SRV.wallet.addressDecode(input.fromAddress)).length, 'must have valid addresses');
+			this.checkPred(arr => !arr.filter(input => !input.fromAddress || !SRV.Wallet.addressDecode(input.fromAddress)).length, 'must have valid addresses');
 			this.checkPred(arr => !arr.filter(input => !(typeof input.amount === 'string') || (parseInt(input.amount) + '') !== input.amount).length, 'must have valid amounts');
 			return this;
 		});
 
 		SRV.Validator.addMethod('isValidOutputsList', function () {
-			this.checkPred(arr => !arr.filter(output => !output.toAddress || !SRV.wallet.addressDecode(output.toAddress)).length, 'must have valid addresses');
+			this.checkPred(arr => !arr.filter(output => !output.toAddress || !SRV.Wallet.addressDecode(output.toAddress)).length, 'must have valid addresses');
 			this.checkPred(arr => !arr.filter(output => !(typeof output.amount === 'string') || (parseInt(output.amount) + '') !== output.amount).length, 'must have valid amounts');
 			return this;
 		});

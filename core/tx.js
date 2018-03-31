@@ -42,6 +42,13 @@ class Tx {
 		this.timestamp = undefined;
 		this.error = undefined;
 		this.status = Status.Initial;
+		// this.bounce = 123;			// whether this transaction is a bounce transaction, that is return of unidentifiable funds cashed in without payment id 
+										// or with invalid paymentId (no such address in db, not a funds adding payment id of CFG.bounce)
+										// undefined means not a bounce tx
+										// number means random sourcePaymentId 
+		// this.bounced = false;		// whether this transaction requires a bounce transaction or it has been already bounced
+										// {@code bounced == false} means tx needs a bounce, but hasn't been yet bounced
+										// {@code bounced == true} means tx has been successuflly bounced
 	}
 
 	get amount () { return this.operations.map(o => o.amount).reduce((a, b) => a + b); }
@@ -58,7 +65,7 @@ class Tx {
 	}
 
 	toJSON() {
-		return {
+		let o = {
 			_id: this._id,
 			opid: this.opid,
 			priority: this.priority,
@@ -71,6 +78,13 @@ class Tx {
 			error: this.error,
 			status: this.status,
 		};
+		if (this.bounce !== undefined) {
+			o.bounce = this.bounce;
+		}
+		if (this.bounced !== undefined) {
+			o.bounced = this.bounced;
+		}
+		return o;
 	}
 
 	addPayment(from, to, asset, amount, sourcePaymentId, paymentId) {
