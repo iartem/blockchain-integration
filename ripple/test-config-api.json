@@ -5,7 +5,7 @@
 	"port": 3003,
 	"log": "debug",
 	"testnet": true,
-	"store": "mongodb://192.168.1.216:27017/lykke_test_ripple",
+	"store": "mongodb://192.168.3.77:27017/lykke_test_ripple",
 	"node": "wss://s.altnet.rippletest.net:51233",
 	"assetId": "XRP",
 	"assetName": "XRP",

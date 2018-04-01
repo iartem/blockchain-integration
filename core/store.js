@@ -114,28 +114,6 @@ class MongoStore {
 	}
 
 	txHistory (query, query2, limit, after) {
-		console.log([
-			{$match: query},
-			{$sort: {timestamp: 1}},
-			{$unwind: '$operations'}, 
-			{$project: {
-				_id: 1,
-				opid: 1, 
-				timestamp: 1, 
-				hash: 1, 
-				bounce: 1,
-				bounced: 1,
-				from: '$operations.from', 
-				sourcePaymentId: '$operations.sourcePaymentId',
-				to: '$operations.to',
-				paymentId: '$operations.paymentId',
-				amount: '$operations.amount', 
-				fee: '$operations.fee', 
-			}},
-			{$match: query2},
-			{$match: {hash: {$gt: after || ''}}},
-			{$limit: limit},
-		]);
 		return this.Transactions.aggregate([
 			{$match: query},
 			{$sort: {timestamp: 1}},

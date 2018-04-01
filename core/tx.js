@@ -48,7 +48,7 @@ class Tx {
 										// number means random sourcePaymentId 
 		// this.bounced = false;		// whether this transaction requires a bounce transaction or it has been already bounced
 										// {@code bounced == false} means tx needs a bounce, but hasn't been yet bounced
-										// {@code bounced == true} means tx has been successuflly bounced
+										// {@code bounced == 123} means tx has been successuflly bounced with tx which {@code bounce === this.bounced}
 	}
 
 	get amount () { return this.operations.map(o => o.amount).reduce((a, b) => a + b); }

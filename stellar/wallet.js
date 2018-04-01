@@ -1,5 +1,6 @@
 const StellarSdk = require('stellar-sdk'),
 	Wallet = require('../core/wallet.js'),
+	Transport = require('../core/transport.js'),
 	utils = require('../core/utils.js'),
 	Big = require('big.js'),
 	crypto = require('crypto'),
@@ -54,7 +55,7 @@ class XLMWallet extends Wallet {
 						}
 
 						// skip non-native operations
-						if (payment.asset_type !== 'native') {
+						if (payment.type !== 'create_account' && payment.asset_type !== 'native') {
 							return;
 						}
 
@@ -364,6 +365,21 @@ class XLMWallet extends Wallet {
 		return ret;
 	}
 
+	static async createTestWallet () {
+		let wallet = XLMWallet.createPaperWallet();
+
+		let transport = new Transport({url: 'https://horizon-testnet.stellar.org/friendbot', retryPolicy: (error, attempts) => {
+			return error === 'timeout' || (error === null && attempts < 3);
+		}, conf: {timeout: 15000, headers: {accept: 'application/json'}}});
+
+		await transport.retriableRequest(null, 'GET', {addr: wallet.address});
+
+		return {
+			address: wallet.address,
+			seed: wallet.seed
+		};
+	}
+
 	/**
 	 * Initializes view wallet in offline mode. Doesn't connect to node. 
 	 *
@@ -383,6 +399,7 @@ XLMWallet.Errors = Wallet.Errors;
 XLMWallet.Account = Wallet.Account;
 XLMWallet.Tx = Wallet.Tx;
 XLMWallet.SEPARATOR = '+';
+XLMWallet.MANY_OUTPUTS = true;
 XLMWallet.EXTENSION_NAME = 'memo';
 
 

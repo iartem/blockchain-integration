@@ -1178,6 +1178,7 @@ const index = (settings, routes, WalletClass) => {
 		SRV.close = async () => {
 			if (SRV.wallet) {
 				await SRV.wallet.close();
+				SRV.wallet = null;
 			}
 			await _close();
 		};

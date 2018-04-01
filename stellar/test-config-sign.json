@@ -4,8 +4,5 @@
 	"serviceName": "StellarSignService",
 	"port": 5002,
 	"log": "debug",
-	"testnet": true,
-	"wallet": {
-		"address": "GDZDCMYENMBJ7DHBGSJEU5GXFRSEXCGGWR4J23HVFBQDQ4WGIJLS7CRO"
-	}
+	"testnet": true
 }

@@ -59,7 +59,7 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 				} finally {
 					if (client) { try {client.close();} catch (ignored) {} }
 				}
-			});
+			}).timeout(5000);
 			it('should start api', () => {
 				process.env.SettingsUrl = apiConf;
 				return require(apiPath).then(srv => {

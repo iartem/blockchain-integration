@@ -137,78 +137,14 @@ var CFG, createWallet = () => new Wallet(CFG.testnet, CFG.node, Log('wallet'), (
 // });
 
 describe('stellar chain', () => {
-	let D = {MULTI_OUTS: true};
-
-	async function transfer (from, address, amount) {
-		let view, sign;
-		try {
-			view = createWallet();
-			sign = createWallet();
-
-			await view.initViewWallet(from.address);
-			await sign.initSignWallet(from.address, from.seed);
-
-			let tx = new Wallet.Tx('someid', 1, 0);
-			if (Array.isArray(amount)) {
-				address.forEach((addr, i) => {
-					let comps = Wallet.addressDecode(addr);
-					tx.addPayment(from.address, comps.address, CFG.assetOpKey, amount[i], undefined, comps.paymentId);
-				});
-			} else {
-				let comps = Wallet.addressDecode(address);
-				tx.addPayment(from.address, comps.address, CFG.assetOpKey, amount, undefined, comps.paymentId);
-			}
-
-			let unsigned = await view.createUnsignedTransaction(tx);
-			console.log('unsigned', unsigned);
-			should.exist(unsigned);
-			should.exist(unsigned.unsigned);
-			should.not.exist(unsigned.error);
-
-			let signed = sign.signTransaction(unsigned.unsigned);
-			console.log('signed', signed);
-			should.exist(signed);
-			should.exist(signed.signed);
-			should.not.exist(signed.error);
-
-			let sent = await view.submitSignedTransaction(signed.signed);
-			console.log('sent', sent);
-		} finally {
-			try { if (view) { view.close(); } } catch (ignored) {console.log(ignored);}
-			try { if (sign) { sign.close(); } } catch (ignored) {console.log(ignored);}
-		}
-	}
+	let D = {};
 
 	describe('prepare', () => {
 		it('should load config', async () => {
 			CFG = await require('../core/config.js').load(__dirname + '/test-config-api.json');
-		});
-		
-		it('should generate 4 new wallets & fill them with 10 coins', async () => {
-			let wallet = createWallet();
-			let WS = wallet.createPaperWallet(),
-				W1 = wallet.createPaperWallet(),
-				W2 = wallet.createPaperWallet(),
-				W3 = wallet.createPaperWallet(),
-				W4 = wallet.createPaperWallet();
-
-			let transport = new Transport({url: 'https://horizon-testnet.stellar.org/friendbot', retryPolicy: (error, attempts) => {
-				return error === 'timeout' || (error === null && attempts < 3);
-			}, conf: {timeout: 15000, headers: {accept: 'application/json'}}});
-
-			await transport.retriableRequest(null, 'GET', {addr: WS.address});
-
-			let hundred = 100 * Math.pow(10, CFG.assetAccuracy);
-
-			await transfer(WS, [W1.address, W2.address, W3.address], [hundred, hundred, hundred], 'seedtx');
-
-			D.W = W1;
-			D.WA = W2;
-			D.WB = W3;
-			D.WC = W4;
-			D.AC = W4.address;
 
 			D.INITIAL_BALANCE = 100 * Math.pow(10, CFG.assetAccuracy);
+			// D.bounce_cashin = 70 * Math.pow(10, CFG.assetAccuracy);
 			D.AA_cashin = 80 * Math.pow(10, CFG.assetAccuracy);
 			D.AB_cashin = 50 * Math.pow(10, CFG.assetAccuracy);
 			D.WA_cashout_wrong = 1000 * Math.pow(10, CFG.assetAccuracy);
@@ -217,10 +153,10 @@ describe('stellar chain', () => {
 			D.WB_cashout = 20 * Math.pow(10, CFG.assetAccuracy - 1);
 			D.WC_cashout = 20 * Math.pow(10, CFG.assetAccuracy - 1);
 
-			console.log('DATA', D);
-		}).timeout(60000);
+			console.log(D);
+		});
 	});
-
+		
 	require('../core/tests-chain.js')(
 		__dirname + '/test-config-api.json', 
 		__dirname + '/api.js', 
@@ -228,7 +164,41 @@ describe('stellar chain', () => {
 		__dirname + '/sign.js',
 		D,
 		{
-			transfer: transfer,
+			fill: async (API, SIGN) => {
+				let res = await API.r.post('/api/testing/transfers').expect(200);
+				console.log('WS', res.body);
+
+				let WS = res.body,
+					W1 = API.Wallet.createPaperWallet(),
+					W2 = API.Wallet.createPaperWallet(),
+					W3 = API.Wallet.createPaperWallet(),
+					W4 = API.Wallet.createPaperWallet();
+
+				res = await API.r.post('/api/testing/transfers').send({
+					fromAddress: WS.address,
+					fromPrivateKey: WS.seed,
+					toAddress: [
+						CFG.bounce ? W1.address + Wallet.SEPARATOR + CFG.bounce : W1.address, W2.address, W3.address, W4.address
+					],
+					amount: [
+						D.INITIAL_BALANCE,
+						D.INITIAL_BALANCE,
+						D.INITIAL_BALANCE,
+						D.INITIAL_BALANCE
+					],
+					assetId: CFG.assetId
+				}).expect(200);
+
+				console.log('WS => W1, W2, W3, W4', res.body);
+
+				D.W = W1;
+				D.WA = W2;
+				D.WB = W3;
+				D.WC = W4;
+				D.AC = W4.address;
+
+				console.log(D);
+			},
 			wait: utils.wait.bind(utils, 10000)
 		});
 });

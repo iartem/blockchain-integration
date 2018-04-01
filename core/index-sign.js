@@ -1,4 +1,4 @@
-var CFG, SRV, log, Wallet, wallet, AD, VK, PK;
+var CFG, SRV, log, ValidationError, Wallet, wallet, AD, VK, PK;
 
 /**
  * Some deffault routes for API service implemented according to one wallet scheme.
@@ -126,9 +126,11 @@ const index = (settings, routes, WalletClass) => {
 		CFG = SRV.CFG;
 		log = SRV.log('core-sign');
 		Wallet = WalletClass;
+		ValidationError = SRV.ValidationError;
 
 		// initialize dummy wallet for addresses generation
 		SRV.resetWallet = (address, view, privat) => {
+			log.info('Preparing wallet');
 			AD = address || process.env.WalletAddress || CFG.WalletAddress;
 			PK = privat || process.env.WalletPrivateKey || CFG.WalletPrivateKey;
 			wallet = new Wallet(CFG.testnet, null, SRV.log('sign-wallet'), () => {});
@@ -145,6 +147,7 @@ const index = (settings, routes, WalletClass) => {
 		SRV.close = async () => {
 			if (wallet) {
 				await wallet.close();
+				wallet = null;
 			}
 			await _close();
 		};
