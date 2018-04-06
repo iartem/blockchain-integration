@@ -62,16 +62,16 @@ let createTx = async (ctx, multipleInputs, multipleOutputs) => {
 			throw new ValidationError('fromAddress', 'Only wallet-originated transactions supported');
 		}
 
-		if (ctx.vals.includeFee) {
-			throw new ValidationError('includeFee', 'Only added fees supported');
-		}
-
 		log.info(`Constructing 1-to-1 tx for ${ctx.vals.operationId}`);
 
 		let from = SRV.Wallet.addressDecode(ctx.vals.fromAddress),
 			to = SRV.Wallet.addressDecode(ctx.vals.toAddress);
 
 		tx.addPayment(from.address, to.address, CFG.assetOpKey, ctx.vals.amount, from.paymentId, to.paymentId);
+
+		if (!tx.dwhw && ctx.vals.includeFee) {
+			throw new ValidationError('includeFee', 'Only added fees supported');
+		}
 	}
 
 	if (tx.operations.filter(op => op.amount <= 0).length) {
@@ -771,7 +771,7 @@ let API_ROUTES = {
 		 * Create unsigned transaction with multiple inputs
 		 * 
 		 * @return {200}	if succeeded
-		 */
+		 */	
 		'/api/transactions/many-inputs': async ctx => {
 			// validate request body, construct Tx object from request & perform some consistency validation
 			let tx = await createTx(ctx, true, false);
