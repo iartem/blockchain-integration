@@ -14,7 +14,7 @@ var CFG, SRV, log, ValidationError, Wallet, syncRequired;
  */
 let createTx = async (ctx, multipleInputs, multipleOutputs) => {
 	ctx.validateParam('wallet').check(SRV.wallet && SRV.wallet.status === Wallet.Status.Ready, 'Wallet is not ready yet, please try again later');
-	ctx.validateBody('operationId').required('is required').isString('must be a string');
+	ctx.validateBody('operationId').required('is required').isGUID();
 	ctx.validateBody('assetId').required('is required').isString('must be a string').eq(CFG.assetId, 'must be equal to "' + CFG.assetId + '"');
 
 	let tx = new Wallet.Tx();
@@ -288,7 +288,7 @@ let processTx = async (ctx, tx) => {
  */
 let findTx = async (ctx) => {
 	ctx.validateParam('wallet').check(SRV.wallet && SRV.wallet.status === Wallet.Status.Ready, 'Wallet is not ready yet, please try again later');
-	ctx.validateParam('operationId').required('is required').isString('must be a string');
+	ctx.validateParam('operationId').required('is required').isGUID();
 
 	let tx = await ctx.store.tx({opid: ctx.vals.operationId, observing: true, bounce: {$exists: false}});
 
@@ -309,7 +309,7 @@ let findTx = async (ctx) => {
 		ctx.body = {
 			operationId: ctx.vals.operationId,
 			state: status,
-			timestamp: tx.timestamp || undefined,
+			timestamp: tx.timestamp ? new Date(tx.timestamp).toISOString() : undefined,
 			amount: '' + tx.amount,
 			fee: (tx.fees || 0) + '',
 			hash: tx.hash,
@@ -762,7 +762,7 @@ let API_ROUTES = {
 
 			// call wallet for tx data or resync data if needed
 			ctx.body = await processTx(ctx, tx);
-			if (ctx.body.errorCode && !ctx.status) {
+			if (ctx.body.errorCode) {
 				ctx.status = 400;
 			}
 		},
@@ -778,7 +778,7 @@ let API_ROUTES = {
 
 			// call wallet for tx data or resync data if needed
 			ctx.body = await processTx(ctx, tx);
-			if (ctx.body.errorCode && !ctx.status) {
+			if (ctx.body.errorCode) {
 				ctx.status = 400;
 			}
 		},
@@ -794,7 +794,7 @@ let API_ROUTES = {
 
 			// call wallet for tx data or resync data if needed
 			ctx.body = await processTx(ctx, tx);
-			if (ctx.body.errorCode && !ctx.status) {
+			if (ctx.body.errorCode) {
 				ctx.status = 400;
 			}
 		},
@@ -809,7 +809,7 @@ let API_ROUTES = {
 		 */
 		'/api/transactions/broadcast': async ctx => {
 			ctx.validateParam('wallet').check(SRV.wallet && SRV.wallet.status === Wallet.Status.Ready, 'Wallet is not ready yet, please try again later');
-			ctx.validateBody('operationId').required('is required').isString('must be a string');
+			ctx.validateBody('operationId').required('is required').isGUID();
 			ctx.validateBody('signedTransaction').required('is required').isString('must be a string');
 
 			let tx = await ctx.store.tx({opid: ctx.vals.operationId});
@@ -1098,7 +1098,7 @@ let API_ROUTES = {
 		 * @return {204}	if no such transaction is on observe list
 		 */
 		'/api/transactions/broadcast/:operationId': async ctx => {
-			ctx.validateParam('operationId').required('is required').isString('must be a string');
+			ctx.validateParam('operationId').required('is required').isGUID();
 
 			let updated = await ctx.store.tx({opid: ctx.params.operationId}, {observing: false}, false);
 

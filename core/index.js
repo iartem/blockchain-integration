@@ -1,5 +1,7 @@
 'use strict';
 
+const GUID = new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$', 'i');
+
 const index = (settings, routes={}) => {
 	const log = require('../core/log.js'),
 		L = log('index');
@@ -164,6 +166,10 @@ const index = (settings, routes={}) => {
 				return this;
 			});
 
+			srv.Validator.addMethod('isGUID', function () {
+				this.checkPred(val => typeof val === 'string' && GUID.test(val), 'must be a GUID');
+				return this;
+			});
 
 			srv.close = async () => {
 				L.monitor(`Terminating ${CFG.chain} (close)`);

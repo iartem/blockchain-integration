@@ -194,10 +194,16 @@ describe('core server', () => {
 						id: parseInt(ctx.params.id),
 						name: ctx.request.body.name
 					};
+				},
+				'/post/:operationId/check': ctx => {
+					ctx.validateParam('operationId').required('is required').isGUID('must be a GUID');
+
+					ctx.body = {};
 				}
 			}
 		}).then(async srv => {
 			SRV = srv;
+			SRV.wallet = {status: Wallet.Status.Ready};
 			const request = supertest(srv.server);
 
 			await request.get('/')
@@ -231,12 +237,27 @@ describe('core server', () => {
 			await request.post('/post/1/observe')
 				.send({notAName: 1})
 				.expect('Content-Type', 'application/json; charset=utf-8')
-				.expect(400, {errorMessage: 'Validation Error', modelErrors: {name: ['name body parameter is required']}});
+				.expect(400, {errorCode: 'unknown', errorMessage: 'Validation Error', modelErrors: {name: ['name body parameter is required']}});
 
 			await request.post('/post/not-a-number/observe')
 				.send({name: 'test'})
 				.expect('Content-Type', 'application/json; charset=utf-8')
-				.expect(400, {errorMessage: 'Validation Error', modelErrors: {id: ['id url parameter must be a number']}});
+				.expect(400, {errorCode: 'unknown', errorMessage: 'Validation Error', modelErrors: {id: ['id url parameter must be a number']}});
+
+			await request.post('/post/not-op-id/check')
+				.send({name: 'test'})
+				.expect('Content-Type', 'application/json; charset=utf-8')
+				.expect(400, {errorCode: 'unknown', errorMessage: 'Validation Error', modelErrors: {operationId: ['must be a GUID']}});
+
+			await request.post('/post/123/check')
+				.send({name: 'test'})
+				.expect('Content-Type', 'application/json; charset=utf-8')
+				.expect(400, {errorCode: 'unknown', errorMessage: 'Validation Error', modelErrors: {operationId: ['must be a GUID']}});
+
+			await request.post('/post/b7550f98-92ac-4cf3-8423-abba46b3165a/check')
+				.send({name: 'test'})
+				.expect('Content-Type', 'application/json; charset=utf-8')
+				.expect(200, {});
 
 			await request.delete('/no-such-endpoint')
 				.expect(404);
