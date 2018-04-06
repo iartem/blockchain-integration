@@ -762,6 +762,9 @@ let API_ROUTES = {
 
 			// call wallet for tx data or resync data if needed
 			ctx.body = await processTx(ctx, tx);
+			if (ctx.body.errorCode && !ctx.status) {
+				ctx.status = 400;
+			}
 		},
 
 		/**
@@ -775,6 +778,9 @@ let API_ROUTES = {
 
 			// call wallet for tx data or resync data if needed
 			ctx.body = await processTx(ctx, tx);
+			if (ctx.body.errorCode && !ctx.status) {
+				ctx.status = 400;
+			}
 		},
 
 		/**
@@ -788,6 +794,9 @@ let API_ROUTES = {
 
 			// call wallet for tx data or resync data if needed
 			ctx.body = await processTx(ctx, tx);
+			if (ctx.body.errorCode && !ctx.status) {
+				ctx.status = 400;
+			}
 		},
 
 		/**
@@ -865,6 +874,7 @@ let API_ROUTES = {
 								observing: true
 							}, false);
 
+							ctx.status = 400;
 							ctx.body = {
 								errorCode: result.error.type === Wallet.Errors.NOT_ENOUGH_FUNDS ? 'notEnoughBalance' : 'amountIsTooSmall' 
 							};
