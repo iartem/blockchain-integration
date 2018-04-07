@@ -1118,6 +1118,7 @@ let API_ROUTES = {
 		 * @return {200}	always
 		 */
 		'/api/transactions/history/from/:address/observation': ctx => {
+			ctx.validateParam('address').required('is required').isValidChainAddress();
 			ctx.status = 200;
 		},
 
@@ -1128,6 +1129,7 @@ let API_ROUTES = {
 		 * @return {200}	always
 		 */
 		'/api/transactions/history/to/:address/observation': ctx => {
+			ctx.validateParam('address').required('is required').isValidChainAddress();
 			ctx.status = 200;
 		},
 	},
