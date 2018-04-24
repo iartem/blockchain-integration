@@ -810,7 +810,7 @@ let API_ROUTES = {
 		'/api/transactions/broadcast': async ctx => {
 			ctx.validateParam('wallet').check(SRV.wallet && SRV.wallet.status === Wallet.Status.Ready, 'Wallet is not ready yet, please try again later');
 			ctx.validateBody('operationId').required('is required').isGUID();
-			ctx.validateBody('signedTransaction').required('is required').isString('must be a string');
+			ctx.validateBody('signedTransaction').required('is required').isTransactionContext();
 
 			let tx = await ctx.store.tx({opid: ctx.vals.operationId});
 			if (!tx) {
@@ -829,9 +829,11 @@ let API_ROUTES = {
 						throw new Wallet.Error(Wallet.Errors.DB, `failed to inc balances: ${tx.operations.map(op => op.from + ' / ' + op.sourcePaymentId + ' to -' + op.amount).filter((s, i) => !updates[i]).join(', ')}`);
 					}
 
+					tx.block = tx.page = (await SRV.wallet.currentBlock()) + 1;
+
 					// mark tx as completed right away
-					await ctx.store.tx(tx._id, {hash: '' + Date.now(), status: Wallet.Tx.Status.Completed, timestamp: Date.now(), observing: true}, false);
-					log.info(`Successfully completed tx ${ctx.vals.operationId}`);
+					await ctx.store.tx(tx._id, {hash: '' + Date.now(), status: Wallet.Tx.Status.Completed, timestamp: Date.now(), observing: true, block: tx.block, page: tx.page}, false);
+					log.info(`Successfully completed dwhw tx ${ctx.vals.operationId} with block ${tx.block}`);
 				} else {
 					// common cash-out
 					let result = await SRV.wallet.submitSignedTransaction(ctx.request.body.signedTransaction),

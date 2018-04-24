@@ -171,6 +171,11 @@ const index = (settings, routes={}) => {
 				return this;
 			});
 
+			srv.Validator.addMethod('isTransactionContext', function () {
+				this.checkPred(val => typeof val === 'string' && (val === srv.Wallet.Errors.NOPE_TX || val.length > 36), 'must be a valid transaction context');
+				return this;
+			});
+
 			srv.close = async () => {
 				L.monitor(`Terminating ${CFG.chain} (close)`);
 				srv.server.close();

@@ -53,9 +53,9 @@ class XRPWallet extends Wallet {
 				};
 				this.sequence = info.sequence;
 				if (!this.height) {
-					this.height = info.previousAffectingTransactionLedgerVersion - 10;
+					this.height = (info.previousAffectingTransactionLedgerVersion - 10) * 10;
 				} else {
-					this.height = await this.api.getLedgerVersion() - 100;
+					this.height = (await this.api.getLedgerVersion() - 100) * 10;
 				}
 			}, attempt => attempt >= 3 ? -1 : Math.pow(3, attempt + 1));
 			// try {
@@ -92,7 +92,7 @@ class XRPWallet extends Wallet {
 
 			let opts = {earliestFirst: true};
 			if (this.height) {
-				opts.minLedgerVersion = this.height;
+				opts.minLedgerVersion = Math.floor(this.height / 10);
 			}
 
 			this.log.info(`Refreshing      (${JSON.stringify(opts)})...`);
@@ -103,7 +103,7 @@ class XRPWallet extends Wallet {
 				payments.forEach(this._onTx.bind(this));
 				let heights = payments.map(p => p.outcome && p.outcome.ledgerVersion).filter(v => !!v);
 				if (heights) {
-					this.height = Math.max(...heights);
+					this.height = (Math.max(...heights)) * 10;
 				}
 			}
 			// this.height = await this.api.getLedgerVersion();
@@ -188,6 +188,10 @@ class XRPWallet extends Wallet {
 		return (await this.balances()).native;
 	}
 
+	async currentBlock () {
+		return (await this.api.getLedgerVersion()) * 10;
+	}
+
 	address() {
 		return this.account;
 	}
@@ -264,7 +268,7 @@ class XRPWallet extends Wallet {
 		try {
 			await this.balances();
 
-			let height = await this.api.getLedgerVersion();
+			let height = (await this.currentBlock()) / 10;
 
 			this.log.debug(`Creating tx ${tx._id} in ${this.account} at ${height}: ${JSON.stringify(tx.toJSON())}`);
 
@@ -527,7 +531,7 @@ class XRPWallet extends Wallet {
 					}
 				}
 
-				tx.block = tx.page = info.outcome.ledgerVersion;
+				tx.block = tx.page = info.outcome.ledgerVersion * 10;
 
 				if (info.specification && info.specification.source && info.specification.destination && info.outcome.deliveredAmount) {
 					let op = tx.addPayment(info.specification.source.address, 

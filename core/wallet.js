@@ -89,6 +89,15 @@ class Wallet {
 	}
 
 	/**
+	 * Returns current block number.
+	 * 
+	 * @return {Promise} which resolves to int balance
+	 */
+	currentBlock() {
+		throw new Error('Not implemented');
+	}
+
+	/**
 	 * Decode address from string. 
 	 *
 	 * @param {String} str 	address string

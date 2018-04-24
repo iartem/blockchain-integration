@@ -35,7 +35,11 @@
  * 		7. Check balances & history: balances must not change, history must contain all transactions from above.
  */
 module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
-	let API, SIGN, db;
+	let API, SIGN, db, GUIDS = {
+		dwhw: 'c701df3b-ef18-485e-9788-9e8e3eeccc92',
+		cashoutWA: '5f657694-6759-473e-93f2-d3962e95aed1',
+		cashoutWAWBWC: '59c94e58-2012-456e-813f-01dc3921afc0'
+	};
 
 	console.log(apiConf, apiPath, signConf, signPath, D);
 
@@ -139,18 +143,20 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 
 				}).timeout(50000);
 
-				it('should have tx to bounce in history', async () => {
-					let res = await API.r.get(`/api/transactions/history/to/${D.W.address}?take=10&bounces=true`).expect(200),
-						bounced = res.body.filter(tx => tx.bounced === false)[0];
-					console.log(res.body);
-					should.exist(bounced);
-					bounced.fromAddress.should.equal(D.WC.address);
-					bounced.toAddress.should.equal(D.W.address);
-					bounced.amount.should.equal('' + D.bounce_cashin);
-					bounced.operationId.should.equal('');
-					bounced.bounced.should.equal(false);
-					should.not.exist(bounced.bounce);
-				}).timeout(5000);
+				it('should have tx to bounce in history', () => {
+					return API.utils.waitToResolve(async () => {
+						let res = await API.r.get(`/api/transactions/history/to/${D.W.address}?take=10&bounces=true`).expect(200),
+							bounced = res.body.filter(tx => tx.bounced === false)[0];
+						console.log(res.body);
+						should.exist(bounced);
+						bounced.fromAddress.should.equal(D.WC.address);
+						bounced.toAddress.should.equal(D.W.address);
+						bounced.amount.should.equal('' + D.bounce_cashin);
+						bounced.operationId.should.equal('');
+						bounced.bounced.should.equal(false);
+						should.not.exist(bounced.bounce);
+					}, 5000, 10);
+				}).timeout(50000);
 			});
 		}
 
@@ -298,7 +304,7 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 		describe('DW => HW', () => {
 			it('should return not enough funds for 9 coin attempt from AA', async () => {
 				let tx = {
-					operationId: 'dwhwAAAB',
+					operationId: GUIDS.dwhw,
 					inputs: [
 						{fromAddress: D.AA, amount: '' + Math.ceil(D.AA_cashin * 11 / 10)},
 						{fromAddress: D.AB, amount: '' + (D.AB_cashin)},
@@ -312,7 +318,7 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 			});
 			it('should return not enough amount for 0 coin attempt from AB', async () => {
 				let tx = {
-					operationId: 'dwhwAAAB',
+					operationId: GUIDS.dwhw,
 					inputs: [
 						{fromAddress: D.AA, amount: '' + D.AA_cashin},
 						{fromAddress: D.AB, amount: '0'},
@@ -324,7 +330,7 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 			});
 			it('should create dw => hw transaction for both: AA & AB', async () => {
 				let tx = {
-					operationId: 'dwhwAAAB',
+					operationId: GUIDS.dwhw,
 					inputs: [
 						{fromAddress: D.AA, amount: '' + D.AA_cashin},
 						{fromAddress: D.AB, amount: '' + D.AB_cashin},
@@ -350,7 +356,7 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 				res.body[0].fromAddress.should.equal(D.AA);
 				res.body[0].toAddress.should.equal(D.W.address);
 				res.body[0].amount.should.equal('' + D.AA_cashin);
-				res.body[0].operationId.should.equal('dwhwAAAB');
+				res.body[0].operationId.should.equal(GUIDS.dwhw);
 
 				res = await API.r.get(`/api/transactions/history/from/${D.AB}?take=10`).expect(200);
 				console.log(res.body);
@@ -358,7 +364,7 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 				res.body[0].fromAddress.should.equal(D.AB);
 				res.body[0].toAddress.should.equal(D.W.address);
 				res.body[0].amount.should.equal('' + D.AB_cashin);
-				res.body[0].operationId.should.equal('dwhwAAAB');
+				res.body[0].operationId.should.equal(GUIDS.dwhw);
 			});
 		});
 
@@ -367,7 +373,7 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 
 			it('should return error for 100 coin cashout attempt', async () => {
 				tx = {
-					operationId: 'cashoutWA',
+					operationId: GUIDS.cashoutWA,
 					fromAddress: D.W.address,
 					toAddress: D.WA.address,
 					amount: '' + D.WA_cashout_wrong,
@@ -381,7 +387,7 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 
 			it('should cash-out 10 coins to WA', async () => {
 				tx = {
-					operationId: 'cashoutWA',
+					operationId: GUIDS.cashoutWA,
 					fromAddress: D.W.address,
 					toAddress: D.WA.address,
 					amount: '' + D.WA_cashout_separate,
@@ -439,7 +445,7 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 				res.body[0].fromAddress.should.equal(D.W.address);
 				res.body[0].toAddress.should.equal(D.WA.address);
 				res.body[0].amount.should.equal('' + D.WA_cashout_separate);
-				res.body[0].operationId.should.equal('cashoutWA');
+				res.body[0].operationId.should.equal(GUIDS.cashoutWA);
 			});
 
 			if (D.BOUNCE) {
@@ -473,7 +479,7 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 			if (D.MULTI_OUTS) {
 				it('should cash-out .3 coins to WA, WB, WC', async () => {
 					tx = {
-						operationId: 'cashoutWAWBWC',
+						operationId: GUIDS.cashoutWAWBWC,
 						fromAddress: D.W.address,
 						outputs: [
 							{toAddress: D.WA.address, amount: '' + D.WA_cashout},
@@ -525,7 +531,7 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 		let res;
 		for (let i = 0; i < attempts; i++) {
 			try {
-				res = await api.r.post(multipleInputs ? '/api/transactions/many-inputs' : multipleOutputs ? '/api/transactions/many-outputs' : '/api/transactions/single').send(tx).expect(200);
+				res = await api.r.post(multipleInputs ? '/api/transactions/many-inputs' : multipleOutputs ? '/api/transactions/many-outputs' : '/api/transactions/single').send(tx);
 				if (res.body.errorCode) {
 					return res.body.errorCode;
 				}
