@@ -302,8 +302,10 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 		});
 
 		describe('DW => HW', () => {
+			let tx;
+			
 			it('should return not enough funds for 9 coin attempt from AA', async () => {
-				let tx = {
+				tx = {
 					operationId: GUIDS.dwhw,
 					inputs: [
 						{fromAddress: D.AA, amount: '' + Math.ceil(D.AA_cashin * 11 / 10)},
@@ -317,7 +319,7 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 				err.should.equal('notEnoughBalance');
 			});
 			it('should return not enough amount for 0 coin attempt from AB', async () => {
-				let tx = {
+				tx = {
 					operationId: GUIDS.dwhw,
 					inputs: [
 						{fromAddress: D.AA, amount: '' + D.AA_cashin},
@@ -328,8 +330,9 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 				};
 				await API.r.post('/api/transactions/many-inputs').send(tx).expect(400);
 			});
-			it('should create dw => hw transaction for both: AA & AB', async () => {
-				let tx = {
+
+			it('should pre-create (next test will retry it) dw => hw transaction for both: AA & AB', async () => {
+				tx = {
 					operationId: GUIDS.dwhw,
 					inputs: [
 						{fromAddress: D.AA, amount: '' + D.AA_cashin},
@@ -338,6 +341,15 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 					toAddress: D.W.address,
 					assetId: API.CFG.assetId
 				};
+
+				let res = await API.r.post('/api/transactions/many-inputs').send(tx);
+				if (res.body.errorCode) {
+					return res.body.errorCode;
+				}
+				should.exist(res.body.transactionContext);
+			});
+
+			it('should create dw => hw transaction for both: AA & AB', async () => {
 				let err = await retriableTx(tx, API, SIGN, D.W.seed, 1, true, false);
 				should.not.exist(err);
 
@@ -449,12 +461,12 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 			});
 
 			if (D.BOUNCE) {
-				let bounceOpId;
+				let bounceOpId, bounced;
 				it('should have bounced=true in history', async () => {
 					let res = await API.r.get(`/api/transactions/history/to/${D.W.address}?take=10&bounces=true`).expect(200),
 						bounced = res.body.filter(tx => !!tx.bounced)[0];
-					bounceOpId = bounced.bounced;
 					should.exist(bounced);
+					bounceOpId = bounced.bounced;
 					bounced.fromAddress.should.equal(D.WC.address);
 					bounced.toAddress.should.equal(D.W.address);
 					bounced.amount.should.equal('' + D.bounce_cashin);
@@ -465,14 +477,14 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 				it('should have bounce tx in history', async () => {
 					let res = await API.r.get(`/api/transactions/history/from/${D.W.address}?take=10&bounces=true`).expect(200),
 						bounce = res.body.filter(tx => !!tx.bounce)[0];
-					
+					console.log(res.body);
 					should.exist(bounce);
 					bounce.fromAddress.should.equal(D.W.address);
 					bounce.toAddress.should.equal(D.WC.address);
 					// (parseInt(bounce.amount) + parseInt(bounce.fee)).should.equal('' + D.bounce_cashin);
 					bounce.operationId.should.equal('');
-					bounceOpId.should.equal(bounced.bounce);
-					should.not.exist(bounced.bounced);
+					bounceOpId.should.equal(bounce.bounce);
+					should.not.exist(bounce.bounced);
 				}).timeout(5000);
 			}
 

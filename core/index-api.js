@@ -269,10 +269,8 @@ let processTx = async (ctx, tx) => {
 			delete json._id;
 			json.hash = null;
 			log.warn(`Updating existing tx ${JSON.stringify(existing)} with new data instead of creating new tx: ${JSON.stringify(json)}`);
-			let updated = await ctx.store.tx(existing._id, json, false);
-			if (updated) {
-				return ret;
-			}
+			await ctx.store.tx({_id: existing._id}, json, false);
+			return ret;
 		}
 		throw new Wallet.Error(Wallet.Errors.DB, 'failed to create transaction');
 	}
