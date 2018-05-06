@@ -311,7 +311,7 @@ let findTx = async (ctx) => {
 			amount: '' + tx.amount,
 			fee: (tx.fees || 0) + '',
 			hash: tx.hash,
-			block: tx.block ? parseInt(tx.block) : undefined,
+			block: tx.block || undefined,
 			error: tx.error || undefined
 		};
 		
@@ -578,7 +578,7 @@ let API_ROUTES = {
 
 			let data = await ctx.store.accountFind({balance: {$gt: 0}}, {}, offset, limit, {_id: 1}),
 				balances = data.map(o => {
-					return {address: o._id, assetId: CFG.assetId, balance: '' + o.balance, block: o.block ? '' + o.block : undefined};
+					return {address: o._id, assetId: CFG.assetId, balance: '' + o.balance, block: o.block || undefined};
 				});
 
 			offset = data.length === limit ? '' + (offset + limit) : null;

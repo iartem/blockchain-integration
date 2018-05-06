@@ -9,4 +9,6 @@
 	"assetName": "Monero",
 	"assetOpKey": "monero",
 	"assetAccuracy": 12,
+	"WalletAddress": "9zXxFrqsyjwGwFyWx3FQxM4Fe1XruVkNhP3FFHVuTBwtWU2dVoBaSbBFAF1GAwUgn82Xt1jqgQ8uFQffTAZnqe2L9ahmG7r",
+	"WalletPrivateKey": "516cfb79ce2265f4b407293ff7b1cb219f13fe10ee15d264f7772f98fe5f7208"
 }
