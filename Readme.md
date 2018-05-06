@@ -47,10 +47,8 @@ Below is contents of `test-config.json` which is used for tests of Monero API. A
 	"seedView": "3b7e393e48ccedc23e555f293b88b3a6662471e42b79071ed9fd7a6333cbd302",
 	"seedSeed": "0569d304201515ac8f7af8276234b5c159514a2c97d2e17068bf0298adfe490a",
 	"seedAddress": "9yhHFUUZeARW6ecyHJe2ZARrWEHnifGLQK8tvKZVccVYNoeRKQp8rfDXGzWaJuGT4m3diT8gHGww9B5vwW92m2k91iMJTPM",
-	"wallet": {
-		"view": "516cfb79ce2265f4b407293ff7b1cb219f13fe10ee15d264f7772f98fe5f7208",
-		"address": "9zXxFrqsyjwGwFyWx3FQxM4Fe1XruVkNhP3FFHVuTBwtWU2dVoBaSbBFAF1GAwUgn82Xt1jqgQ8uFQffTAZnqe2L9ahmG7r"
-	}
+	"WalletAddress": "9zXxFrqsyjwGwFyWx3FQxM4Fe1XruVkNhP3FFHVuTBwtWU2dVoBaSbBFAF1GAwUgn82Xt1jqgQ8uFQffTAZnqe2L9ahmG7r",
+	"WalletViewKey": "516cfb79ce2265f4b407293ff7b1cb219f13fe10ee15d264f7772f98fe5f7208"
 }
 ```
 

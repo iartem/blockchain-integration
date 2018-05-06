@@ -29,10 +29,10 @@ let createTx = async (ctx, multipleInputs, multipleOutputs) => {
 
 		log.info(`Constructing multiple inputs tx for ${ctx.vals.operationId}`);
 
-		let to = SRV.Wallet.addressDecode(ctx.vals.toAddress);
+		let to = SRV.Wallet.addressDecode(ctx.vals.toAddress, CFG.testnet);
 
 		ctx.vals.inputs.forEach(input => {
-			let from = SRV.Wallet.addressDecode(input.fromAddress);
+			let from = SRV.Wallet.addressDecode(input.fromAddress, CFG.testnet);
 			tx.addPayment(from.address, to.address, CFG.assetOpKey, input.amount, from.paymentId, to.paymentId);
 		});
 
@@ -46,10 +46,10 @@ let createTx = async (ctx, multipleInputs, multipleOutputs) => {
 
 		log.info(`Constructing multiple outputs tx for ${ctx.vals.operationId}`);
 	
-		let from = SRV.Wallet.addressDecode(ctx.vals.fromAddress);
+		let from = SRV.Wallet.addressDecode(ctx.vals.fromAddress, CFG.testnet);
 
 		ctx.vals.outputs.forEach(output => {
-			let to = SRV.Wallet.addressDecode(output.toAddress);
+			let to = SRV.Wallet.addressDecode(output.toAddress, CFG.testnet);
 			tx.addPayment(from.address, to.address, CFG.assetOpKey, output.amount, from.paymentId, to.paymentId);
 		});
 	} else {
@@ -58,14 +58,14 @@ let createTx = async (ctx, multipleInputs, multipleOutputs) => {
 		ctx.validateBody('amount').required('is required').toInt('must be an integer').gt(0, 'is too small');
 		ctx.validateBody('includeFee').required('is required').isBoolean();
 		
-		if (SRV.Wallet.addressDecode(ctx.vals.fromAddress).address !== SRV.wallet.address()) {
+		if (SRV.Wallet.addressDecode(ctx.vals.fromAddress, CFG.testnet).address !== SRV.wallet.address()) {
 			throw new ValidationError('fromAddress', 'Only wallet-originated transactions supported');
 		}
 
 		log.info(`Constructing 1-to-1 tx for ${ctx.vals.operationId}`);
 
-		let from = SRV.Wallet.addressDecode(ctx.vals.fromAddress),
-			to = SRV.Wallet.addressDecode(ctx.vals.toAddress);
+		let from = SRV.Wallet.addressDecode(ctx.vals.fromAddress, CFG.testnet),
+			to = SRV.Wallet.addressDecode(ctx.vals.toAddress, CFG.testnet);
 
 		tx.addPayment(from.address, to.address, CFG.assetOpKey, ctx.vals.amount, from.paymentId, to.paymentId);
 
@@ -311,6 +311,7 @@ let findTx = async (ctx) => {
 			amount: '' + tx.amount,
 			fee: (tx.fees || 0) + '',
 			hash: tx.hash,
+			block: tx.block ? parseInt(tx.block) : undefined,
 			error: tx.error || undefined
 		};
 		
@@ -550,7 +551,7 @@ let API_ROUTES = {
 		'/api/addresses/:address/validity': ctx => {
 			ctx.validateParam('address').required('is required').isString('must be a string');
 			
-			let decoded = SRV.Wallet.addressDecode(ctx.vals.address);
+			let decoded = SRV.Wallet.addressDecode(ctx.vals.address, CFG.testnet);
 
 			log.info(`Address ${ctx.vals.address} is ${decoded ? 'valid' : 'invalid'}`);
 			
@@ -612,7 +613,7 @@ let API_ROUTES = {
 			ctx.validateQuery('afterHash').optional().isString('must be a string');
 			ctx.validateQuery('bounces').optional().toBoolean('must be a boolean string');
 
-			let parts = SRV.Wallet.addressDecode(ctx.params.address);
+			let parts = SRV.Wallet.addressDecode(ctx.params.address, CFG.testnet);
 			let query = {status: Wallet.Tx.Status.Completed, bounce: {$exists: false}, bounced: {$exists: false}}, query2 = {};
 			if (ctx.vals.bounces) {
 				delete query.bounce;
@@ -640,7 +641,7 @@ let API_ROUTES = {
 					operationId: tx.opid || '',
 					timestamp: new Date(tx.timestamp).toISOString(),
 					fromAddress: ctx.vals.address,
-					toAddress: SRV.Wallet.addressEncode(tx.to, tx.paymentId),
+					toAddress: SRV.Wallet.addressEncode(tx.to, tx.paymentId, CFG.testnet),
 					assetId: CFG.assetId,
 					amount: '' + tx.amount,
 					hash: tx.hash,
@@ -657,7 +658,7 @@ let API_ROUTES = {
 			ctx.validateQuery('afterHash').optional().isString('must be a string');
 			ctx.validateQuery('bounces').optional().toBoolean('must be a boolean string');
 
-			let parts = SRV.Wallet.addressDecode(ctx.params.address);
+			let parts = SRV.Wallet.addressDecode(ctx.params.address, CFG.testnet);
 			let query = {status: Wallet.Tx.Status.Completed, bounce: {$exists: false}, bounced: {$exists: false}}, query2 = {};
 			if (ctx.vals.bounces) {
 				delete query.bounce;
@@ -684,7 +685,7 @@ let API_ROUTES = {
 				return {
 					operationId: tx.opid || '',
 					timestamp: new Date(tx.timestamp).toISOString(),
-					fromAddress: SRV.Wallet.addressEncode(tx.from, tx.sourcePaymentId),
+					fromAddress: SRV.Wallet.addressEncode(tx.from, tx.sourcePaymentId, CFG.testnet),
 					toAddress: ctx.vals.address,
 					assetId: CFG.assetId,
 					amount: '' + tx.amount,
@@ -732,7 +733,7 @@ let API_ROUTES = {
 			ctx.validateParam('wallet').check(SRV.wallet && SRV.wallet.status === Wallet.Status.Ready, 'Wallet is not ready yet, please try again later');
 			ctx.validateParam('address').required('is required').isValidChainAddress();
 
-			let addr = SRV.Wallet.addressDecode(ctx.params.address);
+			let addr = SRV.Wallet.addressDecode(ctx.params.address, CFG.testnet);
 
 			if (addr.address !== SRV.wallet.address()) {
 				throw new ValidationError('address', 'Only wallet address & subaddresses supported');
@@ -820,14 +821,14 @@ let API_ROUTES = {
 				if (tx.dwhw) {
 					log.info(`Skipping broadcasting tx ${ctx.vals.operationId} - DW => HW`);
 
+					tx.block = tx.page = (await SRV.wallet.currentBlock()) + 1;
+
 					// update balances
-					let updates = await Promise.all(tx.operations.map(op => ctx.store.account({paymentId: op.sourcePaymentId}, {$inc: {balance: -op.amount}}, false)));
+					let updates = await Promise.all(tx.operations.map(op => ctx.store.account({paymentId: op.sourcePaymentId}, {$inc: {balance: -op.amount}, $set: {block: tx.block}}, false)));
 
 					if (updates.length !== updates.reduce((a, b) => a + b)) {
 						throw new Wallet.Error(Wallet.Errors.DB, `failed to inc balances: ${tx.operations.map(op => op.from + ' / ' + op.sourcePaymentId + ' to -' + op.amount).filter((s, i) => !updates[i]).join(', ')}`);
 					}
-
-					tx.block = tx.page = (await SRV.wallet.currentBlock()) + 1;
 
 					// mark tx as completed right away
 					await ctx.store.tx(tx._id, {hash: '' + Date.now(), status: Wallet.Tx.Status.Completed, timestamp: Date.now(), observing: true, block: tx.block, page: tx.page}, false);
@@ -968,6 +969,7 @@ let API_ROUTES = {
 			if (ctx.request.body && ctx.request.body.fromAddress && ctx.request.body.toAddress) {
 				ctx.validateBody('fromAddress').required('is required').isValidChainAddress();
 				ctx.validateBody('fromPrivateKey').required('is required').isString('must be a string');
+				ctx.validateBody('fromViewKey').optional().isString('must be a string');
 				ctx.validateBody('toViewKey').optional().isString('must be a string');
 				ctx.validateBody('assetId').required('is required').isString('must be a string').eq(CFG.assetId, 'must be equal to "' + CFG.assetId + '"');
 
@@ -985,9 +987,9 @@ let API_ROUTES = {
 
 					let amount = Array.isArray(ctx.request.body.amount) ? ctx.request.body.amount : [ctx.request.body.amount],
 						address = Array.isArray(ctx.request.body.toAddress) ? ctx.request.body.toAddress : [ctx.request.body.toAddress],
-						fr = SRV.Wallet.addressDecode(ctx.vals.fromAddress);
+						fr = SRV.Wallet.addressDecode(ctx.vals.fromAddress, CFG.testnet);
 
-					await view.initViewWallet(fr.address);
+					await view.initViewWallet(fr.address, ctx.vals.fromViewKey);
 					await sign.initSignWallet(fr.address, ctx.vals.fromPrivateKey);
 
 					let gogogo = async tx => {
@@ -1019,7 +1021,7 @@ let API_ROUTES = {
 					if (Wallet.MANY_OUTPUTS) {
 						let tx = new Wallet.Tx('someid', 1, 0);
 						address.forEach((addr, i) => {
-							let to = SRV.Wallet.addressDecode(addr);
+							let to = SRV.Wallet.addressDecode(addr, CFG.testnet);
 							tx.addPayment(fr.address, to.address, CFG.assetOpKey, amount[i], fr.paymentId, to.paymentId);
 						});
 
@@ -1029,7 +1031,7 @@ let API_ROUTES = {
 						results = await SRV.utils.promiseSerial(address.map((addr, i) => {
 							return () => {
 								let tx = new Wallet.Tx('someid', 1, 0),
-									to = SRV.Wallet.addressDecode(addr);
+									to = SRV.Wallet.addressDecode(addr, CFG.testnet);
 								
 								tx.addPayment(fr.address, to.address, CFG.assetOpKey, amount[i], fr.paymentId, to.paymentId);
 
@@ -1198,18 +1200,18 @@ const index = (settings, routes, WalletClass) => {
 		// standard validation methods
 		ValidationError = SRV.ValidationError;
 		SRV.Validator.addMethod('isValidChainAddress', function () {
-			this.checkPred(val => !!SRV.Wallet.addressDecode(val), `must be valid ${CFG.chain} address`);
+			this.checkPred(val => !!SRV.Wallet.addressDecode(val, CFG.testnet), `must be valid ${CFG.chain} address`);
 			return this;
 		});
 
 		SRV.Validator.addMethod('isValidInputsList', function () {
-			this.checkPred(arr => !arr.filter(input => !input.fromAddress || !SRV.Wallet.addressDecode(input.fromAddress)).length, 'must have valid addresses');
+			this.checkPred(arr => !arr.filter(input => !input.fromAddress || !SRV.Wallet.addressDecode(input.fromAddress, CFG.testnet)).length, 'must have valid addresses');
 			this.checkPred(arr => !arr.filter(input => !(typeof input.amount === 'string') || (parseInt(input.amount) + '') !== input.amount).length, 'must have valid amounts');
 			return this;
 		});
 
 		SRV.Validator.addMethod('isValidOutputsList', function () {
-			this.checkPred(arr => !arr.filter(output => !output.toAddress || !SRV.Wallet.addressDecode(output.toAddress)).length, 'must have valid addresses');
+			this.checkPred(arr => !arr.filter(output => !output.toAddress || !SRV.Wallet.addressDecode(output.toAddress, CFG.testnet)).length, 'must have valid addresses');
 			this.checkPred(arr => !arr.filter(output => !(typeof output.amount === 'string') || (parseInt(output.amount) + '') !== output.amount).length, 'must have valid amounts');
 			return this;
 		});

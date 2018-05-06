@@ -131,6 +131,7 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 				it('should send payment from WC to W (to bounce)', async () => {
 					let res = await API.r.post('/api/testing/transfers').send({
 						fromAddress: D.WC.address,
+						fromViewKey: D.WC.view,
 						fromPrivateKey: D.WC.seed,
 						toAddress: D.W.address,
 						amount: D.bounce_cashin,
@@ -164,6 +165,7 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 			it('should cash-in alice (AA) for 8 coins', async () => {
 				let res = await API.r.post('/api/testing/transfers').send({
 					fromAddress: D.WA.address,
+					fromViewKey: D.WA.view,
 					fromPrivateKey: D.WA.seed,
 					toAddress: D.AA,
 					amount: D.AA_cashin,
@@ -205,6 +207,7 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 			it('should cash-in bob (AB) for 5 coins', async () => {
 				let res = await API.r.post('/api/testing/transfers').send({
 					fromAddress: D.WB.address,
+					fromViewKey: D.WB.view,
 					fromPrivateKey: D.WB.seed,
 					toAddress: D.AB,
 					amount: D.AB_cashin,
@@ -270,7 +273,9 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 				let res = await API.r.get(`/api/transactions/history/to/${D.AA}?take=10`).expect(200);
 				console.log(res.body);
 				res.body.length.should.equal(1);
-				res.body[0].fromAddress.should.equal(D.WA.address);
+				if (res.body[0].fromAddress !== 'unknown') {
+					res.body[0].fromAddress.should.equal(D.WA.address);
+				}
 				res.body[0].toAddress.should.equal(D.AA);
 				res.body[0].amount.should.equal('' + D.AA_cashin);
 				res.body[0].operationId.should.equal('');
@@ -278,7 +283,9 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 				res = await API.r.get(`/api/transactions/history/from/${D.WA.address}?take=10`).expect(200);
 				console.log(res.body);
 				res.body.length.should.equal(1);
-				res.body[0].fromAddress.should.equal(D.WA.address);
+				if (res.body[0].fromAddress !== 'unknown') {
+					res.body[0].fromAddress.should.equal(D.WA.address);
+				}
 				res.body[0].toAddress.should.equal(D.AA);
 				res.body[0].amount.should.equal('' + D.AA_cashin);
 				res.body[0].operationId.should.equal('');
@@ -286,7 +293,9 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 				res = await API.r.get(`/api/transactions/history/to/${D.AB}?take=10`).expect(200);
 				console.log(res.body);
 				res.body.length.should.equal(1);
-				res.body[0].fromAddress.should.equal(D.WB.address);
+				if (res.body[0].fromAddress !== 'unknown') {
+					res.body[0].fromAddress.should.equal(D.WB.address);
+				}
 				res.body[0].toAddress.should.equal(D.AB);
 				res.body[0].amount.should.equal('' + D.AB_cashin);
 				res.body[0].operationId.should.equal('');
@@ -294,7 +303,9 @@ module.exports = (apiConf, apiPath, signConf, signPath, D, BLOCKCHAIN) => {
 				res = await API.r.get(`/api/transactions/history/from/${D.WB.address}?take=10`).expect(200);
 				console.log(res.body);
 				res.body.length.should.equal(1);
-				res.body[0].fromAddress.should.equal(D.WB.address);
+				if (res.body[0].fromAddress !== 'unknown') {
+					res.body[0].fromAddress.should.equal(D.WB.address);
+				}
 				res.body[0].toAddress.should.equal(D.AB);
 				res.body[0].amount.should.equal('' + D.AB_cashin);
 				res.body[0].operationId.should.equal('');

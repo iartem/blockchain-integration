@@ -1,19 +1,9 @@
 /* eslint-env mocha */
 
-const should = require('should'),
-	nock = require('nock'),
-	Wallet = require('./wallet.js'),
-	Log = require('../core/log.js'),
-	crypto = require('crypto'),
-	supertest = require('supertest'),
-	config = require('../core/config.js'),
-	Transport = require('../core/transport.js'),
+const Wallet = require('./wallet.js'),
 	utils = require('../core/utils.js');
 
-var CFG, txes = {}, createWallet = () => new Wallet(CFG.testnet, CFG.node, Log('wallet'), (tx) => {
-	txes[tx.hash] = tx;
-	console.log('onTx', tx);
-}, 10000);
+var CFG;
 
 describe('ripple chain', () => {
 	let D = {BOUNCE: true};

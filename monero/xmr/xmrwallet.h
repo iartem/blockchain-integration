@@ -100,12 +100,15 @@ namespace tools {
 		public:
 			XMRWallet(bool testnet = false);
 
+			static XMRAddress addressDecode(std::string &address_string, bool testnet);
+			static std::string addressEncode(std::string &address_string, std::string &payment_id_string, bool testnet);
+			static XMRKeys createPaperWallet(const std::string &language, bool testnet);
+
     		bool check_connection(uint32_t *version = NULL, uint32_t timeout = 200000);
 			bool disconnect();
 			void stop();
 			bool cleanup();
 
-			XMRKeys createPaperWallet(const std::string &language);
 			bool openPaperWallet(const std::string &spendKey);
 			int openViewWallet(const std::string &address_string, const std::string &view_key_string);
 			int openViewWalletOffline(const std::string &address_string, const std::string &view_key_string);
@@ -116,8 +119,6 @@ namespace tools {
 			std::string address();
 			void balances(uint64_t &balance, uint64_t &unlocked);
 			uint64_t nodeHeight();
-			XMRAddress addressDecode(std::string &address_string);
-			std::string addressEncode(std::string &address_string, std::string &payment_id_string);
 			bool refresh_and_store();
 			bool close();
 			std::string refresh(bool &refreshed);

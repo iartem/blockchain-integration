@@ -10,10 +10,5 @@
 	"node": "http://localhost:28081",
 	"assetId": "monero",
 	"assetName": "Monero",
-	"assetAccuracy": 12,
-
-	"wallet": {
-		"address": "someAdr",
-		"viewKey": "someViewKey"
-	}
+	"assetAccuracy": 12
 }

@@ -16,20 +16,20 @@ namespace tools {
 	class XMR : public node::ObjectWrap, public tools::i_wallet2_callback {
 	public:
 		static void Init(v8::Local<v8::Object> exports);
+		static void addressDecode(const FunctionCallbackInfo<Value>& args);
+		static void addressEncode(const FunctionCallbackInfo<Value>& args);
+		static void createPaperWallet(const FunctionCallbackInfo<Value>& args);
 
 	private:
 		explicit XMR(bool testnet, std::string daemon, bool ssl);
 		~XMR();
 
-		static void createPaperWallet(const FunctionCallbackInfo<Value>& args);
 		static void createIntegratedAddress(const FunctionCallbackInfo<Value>& args);
 		static void openPaperWallet(const FunctionCallbackInfo<Value>& args);
 		static void openViewWallet(const FunctionCallbackInfo<Value>& args);
 		static void openViewWalletOffline(const FunctionCallbackInfo<Value>& args);
 		static void setCallbacks(const FunctionCallbackInfo<Value>& args);
 		static void address(const FunctionCallbackInfo<Value>& args);
-		static void addressDecode(const FunctionCallbackInfo<Value>& args);
-		static void addressEncode(const FunctionCallbackInfo<Value>& args);
 		static void testnet(const FunctionCallbackInfo<Value>& args);
 		static void connect(const FunctionCallbackInfo<Value>& args);
 		static void refresh(const FunctionCallbackInfo<Value>& args);

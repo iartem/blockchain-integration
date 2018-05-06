@@ -2,6 +2,19 @@
 #include "boost/none_t.hpp"
 #include "string_coding.h"
 
+inline void NODE_SET_INSTANCE_METHOD(v8::Local<v8::FunctionTemplate> recv,
+                                      const char* name,
+                                      v8::FunctionCallback callback) {
+  v8::Isolate* isolate = v8::Isolate::GetCurrent();
+  v8::HandleScope handle_scope(isolate);
+  v8::Local<v8::Signature> s = v8::Signature::New(isolate, recv);
+  v8::Local<v8::FunctionTemplate> t =
+      v8::FunctionTemplate::New(isolate, callback, v8::Local<v8::Value>(), s);
+  v8::Local<v8::String> fn_name = v8::String::NewFromUtf8(isolate, name);
+  t->SetClassName(fn_name);
+  recv->InstanceTemplate()->Set(fn_name, t);
+}
+
 namespace tools {
 
 	using v8::Context;
@@ -50,8 +63,8 @@ namespace tools {
 		// Prototype
 		NODE_SET_PROTOTYPE_METHOD(tpl, "testnet", testnet);
 		NODE_SET_PROTOTYPE_METHOD(tpl, "address", address);
-		NODE_SET_PROTOTYPE_METHOD(tpl, "addressDecode", addressDecode);
-		NODE_SET_PROTOTYPE_METHOD(tpl, "addressEncode", addressEncode);
+		NODE_SET_METHOD((Local<v8::Template>)tpl, "addressDecode", addressDecode);
+		NODE_SET_METHOD((Local<v8::Template>)tpl, "addressEncode", addressEncode);
 		NODE_SET_PROTOTYPE_METHOD(tpl, "connect", connect);
 		NODE_SET_PROTOTYPE_METHOD(tpl, "disconnect", disconnect);
 		NODE_SET_PROTOTYPE_METHOD(tpl, "connected", connected);
@@ -64,7 +77,7 @@ namespace tools {
 		NODE_SET_PROTOTYPE_METHOD(tpl, "height", height);
 		NODE_SET_PROTOTYPE_METHOD(tpl, "cleanup", cleanup);
 		NODE_SET_PROTOTYPE_METHOD(tpl, "createIntegratedAddress", createIntegratedAddress);
-		NODE_SET_PROTOTYPE_METHOD(tpl, "createPaperWallet", createPaperWallet);
+		NODE_SET_METHOD((Local<v8::Template>)tpl, "createPaperWallet", createPaperWallet);
 		NODE_SET_PROTOTYPE_METHOD(tpl, "openPaperWallet", openPaperWallet);
 		NODE_SET_PROTOTYPE_METHOD(tpl, "openViewWallet", openViewWallet);
 		NODE_SET_PROTOTYPE_METHOD(tpl, "openViewWalletOffline", openViewWalletOffline);
@@ -110,9 +123,13 @@ namespace tools {
 	 */
 	void XMR::createPaperWallet(const FunctionCallbackInfo<Value>& args) {
 		Isolate* isolate = args.GetIsolate();
-		XMR* xmr = ObjectWrap::Unwrap<XMR>(args.Holder());
 		
-		XMRKeys keys = xmr->wallet->createPaperWallet(std::string(*v8::String::Utf8Value(args[0]->ToString())));
+		if (args.Length() != 2 || !args[0]->IsString() || !args[1]->IsBoolean()) {
+			isolate->ThrowException(Exception::TypeError(String::NewFromUtf8(isolate, "Required arguments: string lang, bool testnet")));
+			return;
+		}
+
+		XMRKeys keys = tools::XMRWallet::createPaperWallet(std::string(*v8::String::Utf8Value(args[0]->ToString())), args[1]->BooleanValue());
 
 		Local<Array> ret = Array::New(isolate);
 		ret->Set(0, String::NewFromUtf8(isolate, keys.spend.c_str()));
@@ -230,15 +247,15 @@ namespace tools {
 
 	void XMR::addressDecode(const FunctionCallbackInfo<Value>& args) {
 		Isolate* isolate = args.GetIsolate();
-		XMR* obj = ObjectWrap::Unwrap<XMR>(args.Holder());
 
-		if (args.Length() != 1 || !args[0]->IsString()) {
-			isolate->ThrowException(Exception::TypeError(String::NewFromUtf8(isolate, "Required arguments: string address")));
+		if (args.Length() != 2 || !args[0]->IsString() || !args[1]->IsBoolean()) {
+			isolate->ThrowException(Exception::TypeError(String::NewFromUtf8(isolate, "Required arguments: string address, bool testnet")));
 			return;
 		}
 
 		std::string address = *v8::String::Utf8Value(args[0]->ToString());
-		XMRAddress addr = obj->wallet->addressDecode(address);
+		bool testnet = args[1]->BooleanValue();
+		XMRAddress addr = tools::XMRWallet::addressDecode(address, testnet);
 
 		Local<Array> ret = Array::New(isolate);
 
@@ -252,16 +269,16 @@ namespace tools {
 
 	void XMR::addressEncode(const FunctionCallbackInfo<Value>& args) {
 		Isolate* isolate = args.GetIsolate();
-		XMR* obj = ObjectWrap::Unwrap<XMR>(args.Holder());
 
-		if (args.Length() != 2 || !args[0]->IsString() || !args[1]->IsString()) {
-			isolate->ThrowException(Exception::TypeError(String::NewFromUtf8(isolate, "Required arguments: string address, string paymentId")));
+		if (args.Length() != 3 || !args[0]->IsString() || !args[1]->IsString() || !args[2]->IsBoolean()) {
+			isolate->ThrowException(Exception::TypeError(String::NewFromUtf8(isolate, "Required arguments: string address, string paymentId, bool testnet")));
 			return;
 		}
 
 		std::string address = *v8::String::Utf8Value(args[0]->ToString());
 		std::string paymentId = *v8::String::Utf8Value(args[1]->ToString());
-		std::string encoded = obj->wallet->addressEncode(address, paymentId);
+		bool testnet = args[2]->BooleanValue();
+		std::string encoded = tools::XMRWallet::addressEncode(address, paymentId, testnet);
 
 		args.GetReturnValue().Set(String::NewFromUtf8(isolate, encoded.c_str()));
 	}

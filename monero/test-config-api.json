@@ -5,19 +5,15 @@
 	"port": 3001,
 	"log": "debug",
 	"testnet": true,
-	"store": "mongodb://192.168.1.216:27017/lykke_test_monero",
-	"node": "http://192.168.1.216:28081",
+	"store": "mongodb://192.168.11.190:27017/lykke_test_monero",
+	"node": "http://192.168.11.190:28081",
 	"assetId": "XMR_ASSET_ID",
 	"assetName": "Monero",
 	"assetOpKey": "monero",
 	"assetAccuracy": 12,
 	"refreshEach": 15000,
 	"socketTimeout": 1200000,
-	"seedView": "3b7e393e48ccedc23e555f293b88b3a6662471e42b79071ed9fd7a6333cbd302",
-	"seedSeed": "0569d304201515ac8f7af8276234b5c159514a2c97d2e17068bf0298adfe490a",
-	"seedAddress": "9yhHFUUZeARW6ecyHJe2ZARrWEHnifGLQK8tvKZVccVYNoeRKQp8rfDXGzWaJuGT4m3diT8gHGww9B5vwW92m2k91iMJTPM",
-	"wallet": {
-		"view": "a4e550ef7244acaf332f9f4d4996067cfdb27cf71fa37849f9bc577a5b88bc0f",
-		"address": "9zC8mRKKyKJ61fzWBzGPHZT9Ebv1g5D1ZWQqjPzRFpa4cBvhL6KrBX3ZCeuz2NxSedERYmR9J74qRCnWJTwFSU2TQ2GU3Ym"
-	}
+	"SeedView": "3b7e393e48ccedc23e555f293b88b3a6662471e42b79071ed9fd7a6333cbd302",
+	"SeedSeed": "0569d304201515ac8f7af8276234b5c159514a2c97d2e17068bf0298adfe490a",
+	"SeedAddress": "9yhHFUUZeARW6ecyHJe2ZARrWEHnifGLQK8tvKZVccVYNoeRKQp8rfDXGzWaJuGT4m3diT8gHGww9B5vwW92m2k91iMJTPM"
 }

@@ -104,7 +104,7 @@ class Wallet {
 	 * @return {Object} 	of {address: 'addr', paymentId: 'pid'} kind if succeeded
 	 * @return undeifned 	if argument is not a vaild address
 	 */
-	static addressDecode(/* str */) {
+	static addressDecode(/* str, testnet */) {
 		throw new Error('Not implemented');
 	}
 
@@ -115,7 +115,7 @@ class Wallet {
 	 * @param {String} paymentId 	paymentId string
 	 * @return {String} 	of address encoded with paymentId in blockchain-specific format
 	 */
-	static addressEncode(/* address, paymentId */) {
+	static addressEncode(/* address, paymentId, testnet */) {
 		throw new Error('Not implemented');
 	}
 

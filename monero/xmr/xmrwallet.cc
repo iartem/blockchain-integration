@@ -20,7 +20,7 @@ namespace tools {
 		mlog_set_log_level(0);
 	}
 
-	XMRKeys XMRWallet::createPaperWallet(const std::string &language) {
+	XMRKeys XMRWallet::createPaperWallet(const std::string &language, const bool testnet) {
 		cryptonote::account_base *acc = new cryptonote::account_base();
 
 		std::string electrum;
@@ -32,7 +32,7 @@ namespace tools {
 		XMRKeys keys;
 		keys.spend = epee::string_tools::pod_to_hex(spend);
 		keys.view = epee::string_tools::pod_to_hex(acc->get_keys().m_view_secret_key);
-		keys.address = acc->get_public_address_str(testnet());
+		keys.address = acc->get_public_address_str(testnet);
 		keys.mnemonics = electrum;
 
 		return keys;
@@ -747,16 +747,16 @@ namespace tools {
 		return m_account.get_public_address_str(testnet());
 	}
 	
-	XMRAddress XMRWallet::addressDecode(std::string &address_string) {
+	XMRAddress XMRWallet::addressDecode(std::string &address_string, bool testnet) {
 		XMRAddress addr;
 		bool has_payment_id;
 		cryptonote::account_public_address address;
 		crypto::hash8 payment_id;
-		if (!cryptonote::get_account_integrated_address_from_str(address, has_payment_id, payment_id, testnet(), address_string)) {
+		if (!cryptonote::get_account_integrated_address_from_str(address, has_payment_id, payment_id, testnet, address_string)) {
 			return addr;
 		}
 
-		addr.address = cryptonote::get_account_address_as_str(testnet(), address);
+		addr.address = cryptonote::get_account_address_as_str(testnet, address);
 		if (has_payment_id) {
 			addr.payment_id = epee::string_tools::pod_to_hex(payment_id);
 			// std::ostringstream oss;
@@ -767,11 +767,11 @@ namespace tools {
 		return addr;
 	}
 
-	std::string XMRWallet::addressEncode(std::string &address_string, std::string &payment_id_string) {
+	std::string XMRWallet::addressEncode(std::string &address_string, std::string &payment_id_string, bool testnet) {
 		bool has_payment_id;
 		cryptonote::account_public_address address;
 		crypto::hash8 payment_id;
-		if (!cryptonote::get_account_integrated_address_from_str(address, has_payment_id, payment_id, testnet(), address_string)) {
+		if (!cryptonote::get_account_integrated_address_from_str(address, has_payment_id, payment_id, testnet, address_string)) {
 			return "";
 		}
 
@@ -779,7 +779,7 @@ namespace tools {
 			return "";
 		}
 
-		return get_account_integrated_address_as_str(testnet(), address, payment_id);
+		return get_account_integrated_address_as_str(testnet, address, payment_id);
 	}
 
 	

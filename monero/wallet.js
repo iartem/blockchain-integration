@@ -80,7 +80,7 @@ class XMRWallet extends Wallet {
 		}, attempt => attempt >= 3 ? -1 : Math.pow(2, attempt + 1));
 	}
 
-	refresh () {
+	async refresh () {
 		if (this.refreshing) {
 			return;
 		}
@@ -131,7 +131,7 @@ class XMRWallet extends Wallet {
 		}
 	}
 
-	close () {
+	async close () {
 		try {
 			this.log.info('Closing wallet');
 			if (this.refreshTimeout) {
@@ -153,9 +153,9 @@ class XMRWallet extends Wallet {
 		}
 	}
 
-	static addressDecode(str) {
+	static addressDecode(str, testnet) {
 		try {
-			let [address, paymentId] = xmr.XMR.addressDecode(str);
+			let [address, paymentId] = xmr.XMR.addressDecode(str, testnet);
 			if (address) {
 				return {
 					address: address,
@@ -163,20 +163,18 @@ class XMRWallet extends Wallet {
 				};
 			}
 		} catch (e) {
-			this.log.error(e, 'Error in address decode');
 			throw new Wallet.Error(Wallet.Errors.EXCEPTION, e.message);
 		}
 	}
 
-	static addressEncode(address, paymentId) {
+	static addressEncode(address, paymentId, testnet) {
 		try {
 			if (paymentId) {
-				return xmr.XMR.addressEncode(address, paymentId);
+				return xmr.XMR.addressEncode(address, paymentId, testnet);
 			} else {
 				return address;
 			}
 		} catch (e) {
-			this.log.error(e, 'Error in address encode');
 			throw new Wallet.Error(Wallet.Errors.EXCEPTION, e.message);
 		}
 	}
@@ -204,6 +202,10 @@ class XMRWallet extends Wallet {
 
 	async currentBalance () {
 		return parseInt((await this.balances()).unlocked);
+	}
+
+	async currentBlock () {
+		return this.height * 10;
 	}
 
 	async createUnsignedTransaction (tx) {
@@ -375,7 +377,7 @@ class XMRWallet extends Wallet {
 					tx.timestamp = parseInt(info.timestamp) * 1000;
 					tx.incoming = info.in;
 					tx.error = info.error;
-					tx.block = parseInt(info.height);
+					tx.block = parseInt(info.height) * 10;
 					tx.status = status;
 
 					if (info.destinations && info.destinations.length) {
@@ -411,6 +413,10 @@ class XMRWallet extends Wallet {
 				// callback, won't throw
 				if (!this.initialRefresh) {
 					this.log.warn(`Cannot find tx ${id} in ${incoming ? 'incoming' : 'outgoing'} transactions list`);
+					if (!this.pending[id]) {
+						this.log.warn(`Cannot find tx ${id} in pending transactions list`);
+						return;
+					}
 					if (!this.pending[id][2]) {
 						this.pending[id][2] = height;
 					}
@@ -438,9 +444,9 @@ class XMRWallet extends Wallet {
 	 * Just create random wallet
 	 * @return object with wallet data, should never fail
 	 */
-	static createPaperWallet () {
+	static createPaperWallet (testnet) {
 		try {
-			let data = xmr.XMR.createPaperWallet('English');
+			let data = xmr.XMR.createPaperWallet('English', testnet);
 			
 			if (data.length === 4) {
 				let ret = {
@@ -517,7 +523,6 @@ class XMRWallet extends Wallet {
 			this.xmr.openViewWalletOffline(address, viewKey);
 			this.status = Wallet.Status.Ready;
 		} catch (e) {
-			this.log.error(e, 'Error in initViewWalletOffline');
 			throw new Wallet.Error(Wallet.Errors.EXCEPTION, e.message || 'Cannot initialize wallet from viewKey');
 		}
 	}
