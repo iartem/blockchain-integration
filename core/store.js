@@ -36,7 +36,7 @@ class MongoStore {
 				this.connectPromise = null;
 
 				this.client = client;
-				this.db = client.db(this.CFG.store.split('/').pop());
+				this.db = client.db(require('url').parse(this.CFG.store).pathname.substr(1));
 
 				this.Accounts = this.db.collection('accounts');
 				this.Transactions = this.db.collection('transactions');
