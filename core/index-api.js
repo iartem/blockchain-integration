@@ -304,6 +304,7 @@ let findTx = async (ctx) => {
 			status = 'completed';
 		}
 
+		log.debug(`Found tx ${JSON.stringify(tx)}`);
 		ctx.body = {
 			operationId: ctx.vals.operationId,
 			state: status,
