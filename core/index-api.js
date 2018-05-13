@@ -970,7 +970,6 @@ let API_ROUTES = {
 				ctx.validateBody('fromAddress').required('is required').isValidChainAddress();
 				ctx.validateBody('fromPrivateKey').required('is required').isString('must be a string');
 				ctx.validateBody('fromViewKey').optional().isString('must be a string');
-				ctx.validateBody('toViewKey').optional().isString('must be a string');
 				ctx.validateBody('assetId').required('is required').isString('must be a string').eq(CFG.assetId, 'must be equal to "' + CFG.assetId + '"');
 
 				let lg = SRV.log('testwallet'),
@@ -989,8 +988,13 @@ let API_ROUTES = {
 						address = Array.isArray(ctx.request.body.toAddress) ? ctx.request.body.toAddress : [ctx.request.body.toAddress],
 						fr = SRV.Wallet.addressDecode(ctx.vals.fromAddress, CFG.testnet);
 
-					await view.initViewWallet(fr.address, ctx.vals.fromViewKey);
 					await sign.initSignWallet(fr.address, ctx.vals.fromPrivateKey);
+
+					if (typeof sign.viewkey === 'function') {
+						ctx.vals.fromViewKey = sign.viewkey();
+					}
+
+					await view.initViewWallet(fr.address, ctx.vals.fromViewKey);
 
 					let gogogo = async tx => {
 						let unsigned = await view.createUnsignedTransaction(tx);

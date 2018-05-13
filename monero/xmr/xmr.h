@@ -30,6 +30,7 @@ namespace tools {
 		static void openViewWalletOffline(const FunctionCallbackInfo<Value>& args);
 		static void setCallbacks(const FunctionCallbackInfo<Value>& args);
 		static void address(const FunctionCallbackInfo<Value>& args);
+		static void viewkey(const FunctionCallbackInfo<Value>& args);
 		static void testnet(const FunctionCallbackInfo<Value>& args);
 		static void connect(const FunctionCallbackInfo<Value>& args);
 		static void refresh(const FunctionCallbackInfo<Value>& args);

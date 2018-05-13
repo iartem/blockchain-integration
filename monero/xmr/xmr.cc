@@ -63,6 +63,7 @@ namespace tools {
 		// Prototype
 		NODE_SET_PROTOTYPE_METHOD(tpl, "testnet", testnet);
 		NODE_SET_PROTOTYPE_METHOD(tpl, "address", address);
+		NODE_SET_PROTOTYPE_METHOD(tpl, "viewkey", viewkey);
 		NODE_SET_METHOD((Local<v8::Template>)tpl, "addressDecode", addressDecode);
 		NODE_SET_METHOD((Local<v8::Template>)tpl, "addressEncode", addressEncode);
 		NODE_SET_PROTOTYPE_METHOD(tpl, "connect", connect);
@@ -243,6 +244,13 @@ namespace tools {
 		XMR* obj = ObjectWrap::Unwrap<XMR>(args.Holder());
 		std::string address = obj->wallet->address();
 		args.GetReturnValue().Set(String::NewFromUtf8(isolate, address.c_str()));
+	}
+
+	void XMR::viewkey(const FunctionCallbackInfo<Value>& args) {
+		Isolate* isolate = args.GetIsolate();
+		XMR* obj = ObjectWrap::Unwrap<XMR>(args.Holder());
+		std::string viewkey = epee::string_tools::pod_to_hex(obj->wallet->get_account().get_keys().m_view_secret_key);
+		args.GetReturnValue().Set(String::NewFromUtf8(isolate, viewkey.c_str()));
 	}
 
 	void XMR::addressDecode(const FunctionCallbackInfo<Value>& args) {

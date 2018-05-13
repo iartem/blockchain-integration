@@ -45,7 +45,6 @@ describe('monero chain', () => {
 
 				let res = await API.r.post('/api/testing/transfers').send({
 					fromAddress: WS.address,
-					fromViewKey: WS.view,
 					fromPrivateKey: WS.seed,
 					toAddress: [
 						CFG.bounce ? W1.address + Wallet.SEPARATOR + CFG.bounce : W1.address, W2.address, W3.address, W4.address

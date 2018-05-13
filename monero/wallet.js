@@ -153,6 +153,15 @@ class XMRWallet extends Wallet {
 		}
 	}
 
+	viewkey() {
+		try {
+			return this.xmr.viewkey();
+		} catch (e) {
+			this.log.error(e, 'Error in viewkey retrieval');
+			throw new Wallet.Error(Wallet.Errors.EXCEPTION, e.message);
+		}
+	}
+
 	static addressDecode(str, testnet) {
 		try {
 			let [address, paymentId] = xmr.XMR.addressDecode(str, testnet);
