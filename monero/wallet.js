@@ -313,7 +313,9 @@ class XMRWallet extends Wallet {
 			if (result.info) {
 				this.log.debug(`Transaction info: ${JSON.stringify(result.info)}`);
 				result.hash = result.info.id;
-				result.timestamp = result.info.timestamp;
+				if (result.info.timestamp) {
+					result.timestamp = parseInt(result.info.timestamp) * 1000;
+				}
 			}
 			if (result.error) {
 				if (result.error in Wallet.Errors) {

@@ -23,13 +23,13 @@ let createTx = async (ctx, multipleInputs, multipleOutputs) => {
 		ctx.validateBody('toAddress').required('is required').isValidChainAddress();
 		ctx.validateBody('inputs').required('is required').isArray('must be an array').isValidInputsList();
 
-		if (ctx.vals.toAddress !== SRV.wallet.address()) {
+		let to = SRV.Wallet.addressDecode(ctx.vals.toAddress, CFG.testnet);
+
+		if (to.address !== SRV.wallet.address()) {
 			throw new ValidationError('toAddress', 'Only wallet-targeted transactions with multiple inputs supported');
 		}
 
 		log.info(`Constructing multiple inputs tx for ${ctx.vals.operationId}`);
-
-		let to = SRV.Wallet.addressDecode(ctx.vals.toAddress, CFG.testnet);
 
 		ctx.vals.inputs.forEach(input => {
 			let from = SRV.Wallet.addressDecode(input.fromAddress, CFG.testnet);
@@ -40,13 +40,13 @@ let createTx = async (ctx, multipleInputs, multipleOutputs) => {
 		ctx.validateBody('fromAddress').required('is required').isValidChainAddress();
 		ctx.validateBody('outputs').required('is required').isArray('must be an array').isValidOutputsList();
 
-		if (ctx.vals.fromAddress !== SRV.wallet.address()) {
+		let from = SRV.Wallet.addressDecode(ctx.vals.fromAddress, CFG.testnet);
+
+		if (from.address !== SRV.wallet.address()) {
 			throw new ValidationError('fromAddress', 'Only wallet-originated transactions with multiple outputs supported');
 		}
 
 		log.info(`Constructing multiple outputs tx for ${ctx.vals.operationId}`);
-	
-		let from = SRV.Wallet.addressDecode(ctx.vals.fromAddress, CFG.testnet);
 
 		ctx.vals.outputs.forEach(output => {
 			let to = SRV.Wallet.addressDecode(output.toAddress, CFG.testnet);
@@ -58,14 +58,14 @@ let createTx = async (ctx, multipleInputs, multipleOutputs) => {
 		ctx.validateBody('amount').required('is required').toInt('must be an integer').gt(0, 'is too small');
 		ctx.validateBody('includeFee').required('is required').isBoolean();
 		
-		if (SRV.Wallet.addressDecode(ctx.vals.fromAddress, CFG.testnet).address !== SRV.wallet.address()) {
+		let from = SRV.Wallet.addressDecode(ctx.vals.fromAddress, CFG.testnet),
+			to = SRV.Wallet.addressDecode(ctx.vals.toAddress, CFG.testnet);
+
+		if (from.address !== SRV.wallet.address()) {
 			throw new ValidationError('fromAddress', 'Only wallet-originated transactions supported');
 		}
 
 		log.info(`Constructing 1-to-1 tx for ${ctx.vals.operationId}`);
-
-		let from = SRV.Wallet.addressDecode(ctx.vals.fromAddress, CFG.testnet),
-			to = SRV.Wallet.addressDecode(ctx.vals.toAddress, CFG.testnet);
 
 		tx.addPayment(from.address, to.address, CFG.assetOpKey, ctx.vals.amount, from.paymentId, to.paymentId);
 
