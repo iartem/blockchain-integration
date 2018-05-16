@@ -889,7 +889,7 @@ let API_ROUTES = {
 
 						ctx.status = 400;
 						ctx.body = {
-							errorCode: errorCode
+							errorCode: errorCode,
 							errorMessage: result.error.message || 'Please retry transaction later'
 						};
 					} else if (result.status) {
