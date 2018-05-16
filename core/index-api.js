@@ -868,25 +868,32 @@ let API_ROUTES = {
 						log.warn(result.error, `Error submitting tx ${ctx.vals.operationId}`);
 
 						// special types of errors
-						if (result.error.type === Wallet.Errors.NOT_ENOUGH_FUNDS || result.error.type === Wallet.Errors.NOT_ENOUGH_AMOUNT) {
-							await ctx.store.tx(tx._id, {
-								error: result.error.type === Wallet.Errors.NOT_ENOUGH_FUNDS ? 'notEnoughBalance' : 'amountIsTooSmall', 
-								status: Wallet.Tx.Status.Failed, 
-								timestamp: Date.now(), 
-								observing: true
-							}, false);
-
-							ctx.status = 400;
-							ctx.body = {
-								errorCode: result.error.type === Wallet.Errors.NOT_ENOUGH_FUNDS ? 'notEnoughBalance' : 'amountIsTooSmall' 
-							};
+						let errorCode;
+						if (result.error.type === Wallet.Errors.NOT_ENOUGH_FUNDS) {
+							errorCode = 'notEnoughBalance';
+						} else if (result.error.type === Wallet.Errors.SYNC_REQUIRED || result.error.type === Wallet.Errors.NOT_ENOUGH_OUTPUTS || 
+							result.error.type === Wallet.Errors.RETRY_REQUIRED) {
+							errorCode = 'rebuildRequired';
+						} else if (result.error.type === Wallet.Errors.NOT_ENOUGH_AMOUNT) {
+							errorCode = 'amountIsTooSmall';
 						} else {
-							// all other errors
-							await ctx.store.tx(tx._id, {error: result.error.message, status: Wallet.Tx.Status.Failed, timestamp: Date.now(), observing: true}, false);
-							throw result.error;
+							errorCode = 'unknown';
 						}
+
+						await ctx.store.tx(tx._id, {
+							error: errorCode, 
+							status: Wallet.Tx.Status.Failed, 
+							timestamp: Date.now(), 
+							observing: true
+						}, false);
+
+						ctx.status = 400;
+						ctx.body = {
+							errorCode: errorCode
+							errorMessage: result.error.message || 'Please retry transaction later'
+						};
 					} else if (result.status) {
-						ctx.status = 499;
+						ctx.status = 400;
 						ctx.body = {
 							errorCode: 'unknown',
 							errorMessage: result.error || 'Please retry transaction later'
