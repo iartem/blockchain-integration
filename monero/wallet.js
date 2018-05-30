@@ -549,7 +549,6 @@ XMRWallet.Error = Wallet.Error;
 XMRWallet.Errors = Wallet.Errors;
 XMRWallet.Account = Wallet.Account;
 XMRWallet.Tx = Wallet.Tx;
-XMRWallet.MANY_OUTPUTS = true;
 XMRWallet.VIEWKEY_NEEDED = true;
 
 
