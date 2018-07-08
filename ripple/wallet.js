@@ -307,7 +307,7 @@ class XRPWallet extends Wallet {
 						},
 					},
 				},
-				instructions = {maxLedgerVersion: height + 4, sequence: this.sequence++};
+				instructions = {maxLedgerVersion: height + 400, sequence: this.sequence++};
 
 			if (tx.bounce) {
 				let feeString = await this.api.getFee(),
@@ -502,6 +502,10 @@ class XRPWallet extends Wallet {
 				if (!info) {
 					return;
 				}
+			}
+
+			if (info.sequence && info.sequence >= this.sequence) {
+				this.sequence = info.sequence + 1;
 			}
 
 			if (info.type !== 'payment') {

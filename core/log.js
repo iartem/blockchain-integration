@@ -3,7 +3,8 @@
 const winston = require('winston'),
 	CFG = require('./config.js').defaults,
 	DEFAULT_LOG_LEVEL = 'monitor',
-	moment = require('moment');
+	moment = require('moment'),
+	WinstonTransport = require('winston-transport');
 
 var currentLevel = CFG ? CFG.log : DEFAULT_LOG_LEVEL;
 
@@ -15,6 +16,7 @@ const levels = {
 	levels: {
 		monitor: 2,
 		error: 2, 
+		fatal: 2, 
 		warn: 3,
 		info: 4,
 		debug: 5,
@@ -22,6 +24,7 @@ const levels = {
 	colors: {
 		monitor: 'white',
 		error: 'red', 
+		fatal: 'red', 
 		warn: 'orange',
 		info: 'blue',
 		verbose: 'green',
@@ -85,6 +88,7 @@ module.exports = label => {
 	return {
 		monitor: logit.bind(null, 'monitor'),
 		error: logit.bind(null, 'error'), 
+		fatal: logit.bind(null, 'fatal'), 
 		warn: logit.bind(null, 'warn'),
 		info: logit.bind(null, 'info'),
 		debug: logit.bind(null, 'debug'),
@@ -94,12 +98,66 @@ module.exports = label => {
 module.exports.setLevel = (level) => {
 	currentLevel = level;
 	loggers.forEach(logger => {
-		let prev = logger.level;
 		logger.level = level;
 		logger.transports.forEach(t => {
-			// if (t.level === prev) {
-				t.level = level;
-			// }
+			t.level = level;
 		});
+	});
+};
+
+module.exports.setUpHTTP = (serviceName, url) => {
+
+	var levelMap = {
+		debug: 'info',
+		info: 'info',
+		error: 'error',
+		fatal: 'fatalError',
+		warn: 'warning',
+		monitor: 'monitor'
+	};
+
+	class HttpTransport extends WinstonTransport {
+		constructor(opts) {
+			super(opts);
+
+			var Transport = require('./transport.js');
+			this.transport = new Transport({url: opts.url, retryPolicy:(error, attempts) => {
+				return error === 'timeout' || (error === null && attempts < 3);
+			}, conf: {timeout: 15000, headers: {accept: 'application/json'}}});
+		}
+
+		log (info, callback) {
+			try {
+				if (info.label === 'transport') {
+					return callback();
+				}
+				// console.log(info);
+
+				let data = {
+					appName: serviceName,
+					appVersion: '1.0.0',
+					envInfo: process.env.ENV_INFO || null,
+					logLevel: levelMap[info.level],
+					component: info.label,
+					message: info.message,
+					additionalSlackChannels: ['warn', 'error', 'fatal', 'monitor'].indexOf(info.level) !== -1 ? ['BlockChainIntegrationImportantMessages', 'BlockChainIntegration'] : ['BlockChainIntegration']
+				};
+
+				console.log(data);
+
+				this.transport.retriableRequest(null, 'POST', data).then(callback.bind(null, null), callback);
+
+				// setImmediate(callback);
+			} catch(e) {
+				console.log(e);
+			}
+		}
+	}
+
+	let http = new HttpTransport({url: url});
+	http.level = currentLevel;
+
+	loggers.forEach(logger => {
+		logger.add(http);
 	});
 };

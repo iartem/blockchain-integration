@@ -4,6 +4,7 @@
 	"serviceName": "RippleApiService",
 	"port": 3003,
 	"log": "debug",
+	"logURL": "http://localhost:3001",
 	"testnet": true,
 	"store": "mongodb://192.168.3.77:27017/lykke_test_ripple",
 	"node": "wss://s.altnet.rippletest.net:51233",
@@ -11,5 +12,6 @@
 	"assetName": "XRP",
 	"assetOpKey": "XRP",
 	"assetAccuracy": 6,
-	"refreshEach": 15000
+	"refreshEach": 15000,
+	"bounce": "123456"
 }

@@ -12,27 +12,27 @@ const index = (settings, routes={}) => {
 		require('../core/config.js').load(settings).then(async CFG => {
 			process.on('SIGINT', () => {
 				L.monitor(`Terminating ${CFG.chain} (SIGINT)`);
-				process.exit(0);
+				setTimeout(process.exit.bind(process, 0), 1000);
 			});
 
 			process.on('SIGTERM', () => {
 				L.monitor(`Terminating ${CFG.chain} (SIGTERM)`);
-				process.exit(0);
+				setTimeout(process.exit.bind(process, 0), 1000);
 			});
 
 			process.on('SIGHUP', () => {
 				L.monitor(`Terminating ${CFG.chain} (SIGHUP)`);
-				process.exit(0);
+				setTimeout(process.exit.bind(process, 0), 1000);
 			});
 
 			process.on('uncaughtException', (err) => {
 				L.error(err, 'Uncaught exception');
-				process.exit(1);
+				setTimeout(process.exit.bind(process, 1), 1000);
 			});
 
 			process.on('unhandledRejection', (err) => {
 				L.error(err, 'Unhandled rejection');
-				process.exit(1);
+				setTimeout(process.exit.bind(process, 1), 1000);
 			}); 
 
 			let srv = {CFG: CFG, log: require('./log.js')};

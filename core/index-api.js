@@ -873,11 +873,11 @@ let API_ROUTES = {
 							errorCode = 'notEnoughBalance';
 						} else if (result.error.type === Wallet.Errors.SYNC_REQUIRED || result.error.type === Wallet.Errors.NOT_ENOUGH_OUTPUTS || 
 							result.error.type === Wallet.Errors.RETRY_REQUIRED) {
-							errorCode = 'rebuildRequired';
+							errorCode = 'buildingShouldBeRepeated';
 						} else if (result.error.type === Wallet.Errors.NOT_ENOUGH_AMOUNT) {
 							errorCode = 'amountIsTooSmall';
 						} else {
-							errorCode = 'unknown';
+							errorCode = 'buildingShouldBeRepeated';
 						}
 
 						await ctx.store.tx(tx._id, {
@@ -895,7 +895,7 @@ let API_ROUTES = {
 					} else if (result.status) {
 						ctx.status = 400;
 						ctx.body = {
-							errorCode: 'unknown',
+							errorCode: 'buildingShouldBeRepeated',
 							errorMessage: result.error || 'Please retry transaction later'
 						};
 					} else {

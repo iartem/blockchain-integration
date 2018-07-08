@@ -39,6 +39,9 @@ const config = {
 			
 		}).then((loaded) => {
 			config.config = Object.assign({}, obj, loaded);
+			if (loaded.logURL) {
+				require('./log.js').setUpHTTP(loaded.serviceName, loaded.logURL);
+			}
 			require('./log.js').setLevel(config.config.log);
 			return config.config;
 		});
